@@ -78,7 +78,7 @@ BLSD-APC：逐抽样的受约束等权投影 → APC 分量 + 剩余面
 | `R/blsd_models.R` | 曲面拟合、抽样、动态指标与 APC 分解的核心实现 |
 | `data/wechat_example.csv` | 原模拟流程的示例数据 |
 | `docs/methods.md` | 数据生成式、模型式、指标、约束与参考文献 |
-| `examples/` | 精简图表预览 |
+| `examples/` | 全部 13 组 PNG／PDF 示例图表 |
 | `tests/` | 核心数值检查 |
 | `outputs/demo/figures/` | 本次运行产生的 PNG／PDF |
 | `outputs/demo/tables/` | 图表清单及结果表 |
@@ -102,7 +102,7 @@ Rscript tests/verify_demo_outputs.R outputs/demo
 | 准 Poisson 曲面 | 默认负二项曲面，显式使用 REML |
 | 主要展示点估计 | 将相关系数抽样传播至死亡率、导数、比值和 APC 分量 |
 | 展开后的导数向量直接做差 | 按年龄和时间计算差分；另提供同一点的连续导数近似 |
-| 年龄梯度以对数率／岁显示 | 新图按每次抽样换算为局部相对变化百分比 |
+| 未单独量化年龄梯度 | 新图按每次抽样换算为局部相对变化百分比 |
 | 等死亡率线的视觉描述 | 新增年龄移动速度及其区间与有效抽样比例 |
 | 残差按队列作图 | 保留为计数诊断，并新增正式的受约束 APC 曲面分解 |
 
