@@ -1,0 +1,11 @@
+outputs/
+.Rhistory
+.RData
+.Ruserdata
+Rplots.pdf
+*.rds
+*.log
+.DS_Store
+Thumbs.db
+tools/upload_payload*
+
