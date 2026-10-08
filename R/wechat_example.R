@@ -1,5 +1,6 @@
-# Reproduce the simulation section of the original WeChat example.
-# The open 85+ group's midpoint of 90 is an explicit simulation convention.
+# [保留 M02 | 微信原版 L14—53]
+# 保留 seed、年龄/年份、人口公式、随机数调用顺序、真率公式和 Poisson 死亡数。
+# 数据生成放入函数以便复现与核验；85+ 取90岁只沿用原模拟的演示约定。
 simulate_wechat_example <- function(seed = 123L) {
   if (length(seed) != 1L || !is.finite(seed) || seed != as.integer(seed)) {
     stop("seed must be one finite integer.", call. = FALSE)
@@ -29,4 +30,3 @@ simulate_wechat_example <- function(seed = 123L) {
   data$Mortality_Rate <- data$Deaths / data$Pop * 100000
   data
 }
-

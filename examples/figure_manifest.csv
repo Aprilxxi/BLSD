@@ -8,7 +8,3 @@
 "7","Age gradient (%) and equal-mortality age movement","fig07_age_percent_and_iso_velocity.png","fig07_age_percent_and_iso_velocity.pdf","Age derivative transformed draw by draw; local approximation; iso retention <95% grey."
 "8","Pointwise interval direction summaries","fig08_pointwise_direction.png","fig08_pointwise_direction.pdf","Categories reflect 95% pointwise intervals, not multiplicity-adjusted evidence."
 "9","Observed-count fit diagnostics","fig09_count_fit_diagnostics.png","fig09_count_fit_diagnostics.pdf","Observed/fitted counts and count deviance residuals; in-sample diagnostics."
-"10","Constrained APC contribution curves","fig10_apc_contribution_curves.png","fig10_apc_contribution_curves.pdf","Log-rate contributions; curvature means nonlinear spline contribution, not a second derivative."
-"11","Six APC component surfaces","fig11_six_apc_component_surfaces.png","fig11_six_apc_component_surfaces.pdf","Six log-rate components; independent panel colour scales; decomposition does not improve count likelihood."
-"12","Full, APC and remainder surfaces","fig12_full_apc_remainder.png","fig12_full_apc_remainder.pdf","Log-rate projection comparison; reconstruction is an algebraic property, not validation."
-"13","Remainder mortality multiplier","fig13_remainder_mortality_multiplier.png","fig13_remainder_mortality_multiplier.pdf","Draw-wise exp(R), then summarized; ratio of full rate to APC projection rate."

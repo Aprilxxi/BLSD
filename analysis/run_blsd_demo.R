@@ -1,4 +1,6 @@
-# Simulated demonstration. The runner never reads the real-data report folders.
+# BLSD-S 示例运行流程。数据为微信原版模拟数据。
+# [修改 M01 | 微信原版 L159—166 只交互展示四图]
+# 增加可配置的抽样数与输出目录，保存九组图及可复核数值表。
 parse_blsd_demo_args <- function(args) {
   settings <- list(draws = 1000L, seed = 123L, age_step = 1,
                    output = "outputs/demo", help = FALSE)
@@ -67,23 +69,29 @@ run_blsd_demo <- function(root, args = character()) {
               row.names = FALSE, na = "", fileEncoding = "UTF-8")
   }
 
+  # [保留 M02 | 微信原版 L14—53] 生成公式与随机数顺序保持一致。
   cat("[1/6] Reproducing the original simulated data...\n")
   data <- simulate_wechat_example(settings$seed)
   csv(data, "simulated_data")
+  # [修改 M03 | 微信原版 L66—68] 准 Poisson 改为负二项，平滑参数采用 REML。
   cat("[2/6] Fitting the negative-binomial age-period surface...\n")
   fit <- fit_blsd_s(data, k_age = 10L, k_period = 10L, family = "nb")
   ages <- sort(unique(c(seq(min(data$Age_Mid), max(data$Age_Mid),
                             by = settings$age_step), data$Age_Mid)))
+  # [修改 M04、M05 | 微信原版 L77—83] 域内网格与同一组相关系数抽样。
   prediction <- predict_blsd_s(fit, ages = ages, years = 1990:2019,
                                n_draws = settings$draws, seed = settings$seed)
+  # [修改 M06—M08、M10 | 微信原版 L85—108]
+  # 按年龄/抽样正确计算导数；区间与连续指标分别保存，并增加等率移动速度。
   cat("[3/6] Deriving interval and continuous fields...\n")
   discrete_fields <- derive_blsd_fields(prediction, min_abs_age_gradient = 0.005)
   continuous_fields <- derive_blsd_continuous_fields(
     fit, prediction, h_age = 0.01, h_year = 0.01,
     min_abs_age_gradient = 0.005
   )
-  # Transform each draw first. exp(mean(g)) is not mean(exp(g)).
-  # These are local one-year approximations, not exact finite-age contrasts.
+  # [修改 M09 | 微信原版没有年龄梯度百分比或动态量抽样汇总]
+  # 先对每次抽样作 100 * expm1，再汇总；先平均再换算通常得到不同结果。
+  # 图中标明局部一岁/一年的近似，严格有限变化应另比较两点的完整死亡率。
   transformed <- list(
     age_gradient_percent = summarize_draw_matrix(
       100 * expm1(continuous_fields$draws$age_gradient),
@@ -92,9 +100,7 @@ run_blsd_demo <- function(root, args = character()) {
       100 * expm1(continuous_fields$draws$velocity),
       prediction$grid, "Annual_Change_Pct")
   )
-  cat("[4/6] Projecting the same draws onto the constrained APC structure...\n")
-  apc <- decompose_blsd_apc(prediction, df_age = 6L, df_period = 6L,
-                          df_cohort = 8L)
+  cat("[4/6] Exporting surface and dynamic summaries...\n")
   csv(prediction$rate_summary, "surface")
   for (name in c("velocity", "acceleration", "age_gradient", "iso_risk_velocity")) {
     csv(discrete_fields[[name]], paste0("interval_", name))
@@ -102,9 +108,6 @@ run_blsd_demo <- function(root, args = character()) {
   }
   csv(transformed$age_gradient_percent, "age_gradient_percent")
   csv(transformed$velocity_percent, "velocity_percent")
-  csv(apc$summary, "apc_components")
-  csv(apc$drift_summary, "apc_drift")
-  csv(apc$diagnostics$per_draw, "apc_draw_checks")
   csv(continuous_fields$diagnostics$stencil, "derivative_stencils")
   fitted_counts <- stats::fitted(fit$model)
   count_diagnostics <- data
@@ -112,22 +115,20 @@ run_blsd_demo <- function(root, args = character()) {
   count_diagnostics$Fitted_Rate <- fitted_counts / data$Pop * 100000
   count_diagnostics$Pearson_Residual <- stats::residuals(fit$model, type = "pearson")
   count_diagnostics$Deviance_Residual <- stats::residuals(fit$model, type = "deviance")
+  # [修改 M11 | 微信原版 L128—139]
+  # 出生队列坐标只用于查看观测计数残差，不把残差平滑当作世代效应。
   count_diagnostics$Cohort <- data$Year - data$Age_Mid
   csv(count_diagnostics, "count_diagnostics")
 
   metrics <- data.frame(
     Metric = c("Observed_Cells", "Prediction_Cells", "Draws", "Data_Seed",
                "Coefficient_Seed", "NB_Theta", "Smooth_EDF",
-               "Design_Rank", "Design_Columns", "Design_Condition_Number",
-               "Max_Reconstruction_Error", "Max_Normalized_Residual_Crossproduct",
+               "Coefficient_Surface_Reconstruction_Error",
                "Min_Iso_Effective_Draw_Fraction"),
     Value = c(nrow(data), nrow(prediction$grid), prediction$n_draws,
               settings$seed, settings$seed, fit$model$family$getTheta(TRUE),
-              sum(fit$model$edf), apc$diagnostics$design_rank,
-              apc$diagnostics$design_columns,
-              apc$diagnostics$design_condition_number,
-              max(apc$diagnostics$per_draw$Max_Abs_Reconstruction_Error),
-              max(apc$diagnostics$per_draw$Max_Normalized_Residual_Crossproduct),
+              sum(fit$model$edf),
+              continuous_fields$diagnostics$coefficient_surface_reconstruction_error,
               min(continuous_fields$iso_risk_velocity$Effective_Draw_Fraction))
   )
   csv(metrics, "summary_metrics")
@@ -139,7 +140,7 @@ run_blsd_demo <- function(root, args = character()) {
   cat("[5/6] Rendering the figure collection...\n")
   figure_manifest <- make_blsd_demo_figures(
     data, fit, prediction, discrete_fields, continuous_fields,
-    apc, transformed, output_dir
+    transformed, output_dir
   )
   csv(figure_manifest, "figure_manifest")
   cat("[6/6] Saving reproducible results and session information...\n")
@@ -147,7 +148,7 @@ run_blsd_demo <- function(root, args = character()) {
     data = data, fit = fit, prediction = prediction,
     discrete_fields = discrete_fields,
     continuous_fields = continuous_fields,
-    apc = apc, transformed = transformed,
+    transformed = transformed,
     settings = settings, figure_manifest = figure_manifest
   )
   saveRDS(result, file.path(output_dir, "demo_result.rds"), compress = "gzip")

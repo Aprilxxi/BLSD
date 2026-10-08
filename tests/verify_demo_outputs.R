@@ -70,14 +70,37 @@ check_draw_summary <- function(table, draws, value, label) {
   check_summary(table, label)
   invisible(TRUE)
 }
+check_export <- function(exported, saved, label) {
+  assert(identical(names(exported), names(saved)) && nrow(exported) == nrow(saved),
+         paste(label, "has changed columns or observation rows."))
+  for (column in names(saved)) {
+    if (is.numeric(saved[[column]])) {
+      same_numeric(exported[[column]], saved[[column]], paste(label, column))
+    } else {
+      assert(identical(as.character(exported[[column]]), as.character(saved[[column]])),
+             paste(label, "does not agree with the saved result in", column))
+    }
+  }
+  invisible(TRUE)
+}
 
 assert(dir.exists(table_dir) && dir.exists(figure_dir), "Figure/table directories are missing.")
 csv_paths <- list.files(table_dir, pattern = "\\.csv$", full.names = TRUE)
 png_paths <- list.files(figure_dir, pattern = "\\.png$", full.names = TRUE)
 pdf_paths <- list.files(figure_dir, pattern = "\\.pdf$", full.names = TRUE)
-assert(length(csv_paths) >= 10L, "The demonstration must export at least ten analysis tables.")
-assert(length(png_paths) >= 13L && length(pdf_paths) >= 13L,
-       "The demonstration must export its thirteen figures in PNG and PDF.")
+assert(length(csv_paths) == 17L, "The surface-only demonstration must export exactly seventeen CSV tables.")
+expected_tables <- paste0(c("simulated_data", "surface",
+  paste0("interval_", c("velocity", "acceleration", "age_gradient", "iso_risk_velocity")),
+  paste0("continuous_", c("velocity", "acceleration", "age_gradient", "iso_risk_velocity")),
+  "age_gradient_percent", "velocity_percent", "derivative_stencils",
+  "count_diagnostics", "summary_metrics", "figure_manifest", "count_fit_diagnostics"), ".csv")
+assert(setequal(basename(csv_paths), expected_tables),
+       "The exported CSV collection differs from the surface-only analysis specification.")
+assert(length(png_paths) == 9L && length(pdf_paths) == 9L,
+       "The surface-only demonstration must export exactly nine figures in PNG and PDF.")
+removed_names <- paste0("(", paste(c(paste0("a", "pc"), "remainder", "component"), collapse = "|"), ")")
+assert(!any(grepl(removed_names, list.files(output_dir, recursive = TRUE), ignore.case = TRUE)),
+       "The output directory contains an artifact from the removed projection stage.")
 assert(setequal(sub("\\.png$", "", basename(png_paths)),
                 sub("\\.pdf$", "", basename(pdf_paths))), "PNG/PDF figure pairs do not match.")
 assert(all(file.info(c(csv_paths, png_paths, pdf_paths))$size > 0), "An exported artifact is empty.")
@@ -94,6 +117,9 @@ tables <- setNames(lapply(csv_paths, read.csv, check.names = FALSE), basename(cs
 assert(all(c("figure_manifest.csv", "summary_metrics.csv") %in% names(tables)),
        "Figure manifest or summary metrics are missing.")
 invisible(lapply(names(tables), function(name) check_summary(tables[[name]], name)))
+assert(nrow(tables[["figure_manifest.csv"]]) == 9L &&
+         identical(as.integer(tables[["figure_manifest.csv"]]$Figure), 1:9),
+       "The figure manifest must contain exactly figures 1 through 9.")
 manifest_values <- unlist(tables[["figure_manifest.csv"]], use.names = FALSE)
 manifest_files <- as.character(manifest_values[grepl("\\.(png|pdf)$", manifest_values)])
 assert(setequal(basename(manifest_files), basename(c(png_paths, pdf_paths))),
@@ -104,8 +130,10 @@ assert(!any(grepl("^([A-Za-z]:[/\\\\]|/|\\\\\\\\)", manifest_files)),
 rds_path <- file.path(output_dir, "demo_result.rds")
 assert(file.exists(rds_path), "Saved demonstration result is missing.")
 result <- readRDS(rds_path)
-required <- c("data", "fit", "prediction", "discrete_fields", "continuous_fields", "apc", "transformed")
+required <- c("data", "fit", "prediction", "discrete_fields", "continuous_fields", "transformed")
 assert(all(required %in% names(result)), "Saved demonstration result lacks required components.")
+assert(!any(grepl(removed_names, names(result), ignore.case = TRUE)),
+       "The saved result still contains a removed projection component.")
 data <- result$data
 assert(nrow(data) == 540L && length(unique(data$Age_Mid)) == 18L &&
          identical(sort(unique(data$Year)), 1990:2019), "Saved data differ from the original example grid.")
@@ -125,6 +153,7 @@ assert(isTRUE(all.equal(prediction$grid, grid, check.attributes = FALSE)),
 same_numeric(prediction$rate_draws, exp(prediction$eta_draws) * prediction$rate_scale,
              "Rate-draw scaling")
 check_draw_summary(prediction$rate_summary, prediction$rate_draws, "Rate", "Mortality rate")
+check_export(tables[["surface.csv"]], prediction$rate_summary, "Mortality-rate CSV")
 assert(requireNamespace("mgcv", quietly = TRUE), "Install mgcv to verify coefficient reconstruction.")
 newdata <- prediction$grid
 newdata$Pop <- 1
@@ -137,6 +166,8 @@ for (name in c("velocity", "acceleration", "age_gradient", "iso_risk_velocity"))
   value <- c(velocity = "Velocity", acceleration = "Acceleration", age_gradient = "Age_Gradient",
              iso_risk_velocity = "Iso_Risk_Velocity")[[name]]
   check_draw_summary(continuous[[name]], continuous$draws[[name]], value, paste("Continuous", name))
+  check_export(tables[[paste0("continuous_", name, ".csv")]], continuous[[name]],
+               paste("Continuous CSV", name))
 }
 iso <- continuous$iso_risk_velocity
 same_numeric(iso$Effective_Draw_Fraction, rowMeans(is.finite(continuous$draws$iso_risk_velocity)),
@@ -146,12 +177,14 @@ same_numeric(iso$Effective_Draw_N, rowSums(is.finite(continuous$draws$iso_risk_v
 assert(all(is.finite(continuous$draws$iso_risk_velocity) |
              is.na(continuous$draws$iso_risk_velocity)), "Iso-risk values must not be infinite.")
 expected_iso <- -continuous$draws$velocity / continuous$draws$age_gradient
-expected_iso[is.na(continuous$draws$iso_risk_velocity)] <- NA_real_
+expected_iso[!is.finite(expected_iso) | abs(continuous$draws$age_gradient) < 0.005] <- NA_real_
 same_numeric(continuous$draws$iso_risk_velocity, expected_iso, "Continuous iso-risk formula")
 
 discrete <- result$discrete_fields
 for (name in c("velocity", "acceleration", "age_gradient", "iso_risk_velocity")) {
   check_summary(discrete[[name]], paste("Discrete", name))
+  check_export(tables[[paste0("interval_", name, ".csv")]], discrete[[name]],
+               paste("Interval CSV", name))
 }
 for (name in c("velocity", "iso_risk_velocity")) {
   table <- discrete[[name]]
@@ -167,22 +200,9 @@ assert(all(discrete$acceleration$Interval_Start < discrete$acceleration$Center_Y
 same_numeric(discrete$iso_risk_velocity$Effective_Draw_Fraction,
              discrete$iso_risk_velocity$Effective_Draw_N / prediction$n_draws,
              "Discrete iso-risk retained fraction")
-
-apc <- result$apc
-assert(apc$diagnostics$design_rank == ncol(apc$design), "APC design is rank deficient.")
-reconstruction <- Reduce(`+`, apc$component_draws)
-assert(max(abs(reconstruction - prediction$eta_draws)) < 1e-10,
-       "APC components fail to reconstruct the saved curve draws.")
-remainder <- apc$component_draws$Residual_Dynamic_Surface
-normalized_crossproduct <- sweep(crossprod(apc$design, remainder), 1L,
-                                sqrt(colSums(apc$design^2)), "/")
-assert(max(abs(normalized_crossproduct)) < 1e-8,
-       "APC remainder is not orthogonal to the retained design for every draw.")
-assert(nrow(apc$diagnostics$per_draw) == prediction$n_draws &&
-         all(apc$diagnostics$per_draw$Max_Abs_Reconstruction_Error < 1e-10) &&
-         all(apc$diagnostics$per_draw$Max_Normalized_Residual_Crossproduct < 1e-8),
-       "Saved per-draw APC numerical diagnostics fail.")
-check_summary(apc$summary, "APC components")
+same_numeric(discrete$iso_risk_velocity$Gradient_Year,
+             discrete$iso_risk_velocity$Interval_Midpoint,
+             "Discrete iso-risk gradient alignment")
 
 transformed <- result$transformed
 assert(all(c("age_gradient_percent", "velocity_percent") %in% names(transformed)),
@@ -208,17 +228,26 @@ for (name in names(percentage_specs)) {
                        paste(name, "CSV", index))
   }))
 }
-assert("remainder_mortality_multiplier.csv" %in% names(tables),
-       "Remainder multiplier table is missing.")
-check_draw_summary(tables[["remainder_mortality_multiplier.csv"]], exp(remainder),
-                   "Mortality_Multiplier", "Remainder multiplier CSV")
 assert("count_fit_diagnostics.csv" %in% names(tables), "Count diagnostics table is missing.")
 count_diagnostics <- tables[["count_fit_diagnostics.csv"]]
 assert(nrow(count_diagnostics) == nrow(data), "Count diagnostics must refer to observed cells.")
 same_numeric(count_diagnostics$Observed_Rate,
              count_diagnostics$Deaths / count_diagnostics$Pop * prediction$rate_scale,
              "Observed rate in count diagnostics")
+assert(isTRUE(all.equal(count_diagnostics[c("Age_Mid", "Year", "Deaths", "Pop")],
+                       data[c("Age_Mid", "Year", "Deaths", "Pop")],
+                       check.attributes = FALSE)),
+       "Count diagnostics are not aligned with the original observation cells.")
+same_numeric(count_diagnostics$Fitted_Deaths, as.numeric(stats::fitted(result$fit$model)),
+             "Fitted deaths in count diagnostics")
+same_numeric(count_diagnostics$Pearson_Residual,
+             as.numeric(stats::residuals(result$fit$model, type = "pearson")),
+             "Pearson residuals in count diagnostics")
+same_numeric(count_diagnostics$Deviance_Residual,
+             as.numeric(stats::residuals(result$fit$model, type = "deviance")),
+             "Deviance residuals in count diagnostics")
+same_numeric(count_diagnostics$Cohort, data$Year - data$Age_Mid,
+             "Birth-year labels in the retained descriptive count diagnostic")
 message("PASS: ", length(png_paths), " PNG/PDF pairs and ", length(csv_paths), " CSV tables.")
 message("PASS: coefficient alignment, rate intervals, retained fractions, interval labels,",
-        " every-draw APC reconstruction/orthogonality, draw-wise percentage conversion,",
-        " and exported remainder mortality multipliers.")
+        " draw-wise percentage conversion and observed-count diagnostics.")

@@ -1,9 +1,9 @@
-# Publication-oriented figures for the self-contained BLSD demonstration.
+# Publication-oriented figures for the self-contained BLSD-S demonstration.
 # Labels are English and use the platform's default sans font. No font or
 # graphics packages are installed by this script.
 
 make_blsd_demo_figures <- function(
-    data, fit, prediction, discrete_fields, continuous_fields, apc,
+    data, fit, prediction, discrete_fields, continuous_fields,
     transformed, output_dir) {
   for (package in c("ggplot2", "gridExtra")) {
     if (!requireNamespace(package, quietly = TRUE)) {
@@ -11,8 +11,8 @@ make_blsd_demo_figures <- function(
     }
   }
   validate_blsd_prediction(prediction)
-  if (!inherits(fit, "blsd_s") || !inherits(apc, "blsd_apc")) {
-    stop("fit and apc must be BLSD model and decomposition objects.", call. = FALSE)
+  if (!inherits(fit, "blsd_s")) {
+    stop("fit must be a BLSD-S model object.", call. = FALSE)
   }
   if (!all(c("age_gradient_percent", "velocity_percent") %in% names(transformed))) {
     stop("transformed must contain age_gradient_percent and velocity_percent.", call. = FALSE)
@@ -57,8 +57,9 @@ make_blsd_demo_figures <- function(
     list(lower = boundaries[index], upper = boundaries[index + 1L])
   }
   tiles <- function(x) {
-    # Unequal node spacings need asymmetric cell bounds. A width centred on
-    # the node would otherwise leave gaps or overlap near an appended endpoint.
+    # [修改 M14 | 微信原版 L101–103、L115–116] 原版直接 geom_tile()。
+    # 现按相邻节点中点构造格子边界，使非等距年龄/年份网格也能连续铺满，
+    # 避免追加范围端点后出现间隙或重叠；颜色对应的统计量不因此改变。
     period_bounds <- cell_bounds(x$Year)
     age_bounds <- cell_bounds(x$Age_Mid)
     x$.X_Min <- period_bounds$lower
@@ -141,6 +142,10 @@ make_blsd_demo_figures <- function(
   iso$Displayed_Iso <- iso$Iso_Risk_Velocity
   iso$Displayed_Iso[!iso$Reliable_Retention] <- NA_real_
 
+  # [修改 M05 | 微信原版 L77–83、L99–108] 保留率曲面与等死亡率线，
+  # 使用已去除人口偏置项的率抽样均值，图例明确为每10万人死亡数。
+  # 预测网格的范围检查在 predict_blsd_s() 中完成；颜色用对数刻度，
+  # 不再把等率线位移直接称为“生理衰老推迟”。
   # 01: Rates and equal-rate contours. Colour encodes a rate, not evidence.
   p <- heatmap(rates, "Rate", "Fitted mortality surface", "Deaths per 100,000",
                "Coefficient-draw mean rate; white contours mark equal fitted rates.",
@@ -150,6 +155,9 @@ make_blsd_demo_figures <- function(
   save_figure(1, "mortality_surface", p, "Fitted mortality surface",
                "Rate per 100,000; logarithmic colour scale; equal-rate contours.")
 
+  # [修改 M09 | 微信原版 L85–92、L115–120；原版未输出百分比图]
+  # 将每次时间导数抽样换算为 100*(exp(导数)-1)，再汇总为百分比，
+  # 避免读者自行换算。它是局部一年变化近似，颜色并不表示区间排除零。
   # 02: Transform every derivative draw before summarizing (done by the runner).
   p <- heatmap(year_percent, "Annual_Change_Pct", "Local annual mortality change",
                "Relative change (%)",
@@ -158,6 +166,9 @@ make_blsd_demo_figures <- function(
   save_figure(2, "annual_change_percent", p, "Local annual mortality change",
                "Derivative-based local one-calendar-year relative change; draw-wise transformation.")
 
+  # [修改 M06 | 微信原版 L85–96、L112–120] 原版计算的 Accel_Time
+  # 未正确除以时间间隔，原图2实际画一阶 Deriv_Time。现图2与图3分开
+  # 展示速度和二阶时间导数，并注明自然三次样条端点二阶导数为零的约束。
   # 03: This remains a log-rate second derivative, not a percent acceleration.
   p <- heatmap(continuous_fields$acceleration, "Acceleration",
                "Temporal acceleration of log mortality", "Log-rate / year^2",
@@ -166,6 +177,9 @@ make_blsd_demo_figures <- function(
   save_figure(3, "log_rate_acceleration", p, "Temporal log-rate acceleration",
                "Second period derivative; natural cubic endpoint constraints apply.")
 
+  # [修改 M11 | 微信原版 L128–139] 保留按出生队列查看计数偏差残差的图，
+  # 用于发现拟合不足。移除“世代自带高风险印记”的归因，LOESS曲线只作
+  # 描述性诊断；该图仍使用观测计数残差，并非新增队列效应模型。
   # 04: Count residuals by cohort are a diagnostic, not a cohort-effect estimate.
   p <- ggplot2::ggplot(observed, ggplot2::aes(x = Cohort, y = Deviance_Residual)) +
     ggplot2::geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
@@ -180,6 +194,9 @@ make_blsd_demo_figures <- function(
   save_figure(4, "count_residuals_by_cohort", p, "Count residuals by cohort",
                "Descriptive count-model diagnostic; no causal cohort interpretation.")
 
+  # [修改 M12 | 微信原版 L146–150] 原版 round(Year) 会将多个相邻
+  # 预测年份归为同一年。现只提取准确的1990、2005、2019年，叠加
+  # 观测率与逐点区间；零观测率只从对数坐标图中省略，仍保留在数据中。
   # 05: The three reference years reproduce the original example's comparison.
   profile_years <- c(1990, 2005, 2019)
   if (!all(profile_years %in% prediction$years)) {
@@ -206,6 +223,9 @@ make_blsd_demo_figures <- function(
                paste("Years:", paste(profile_years, collapse = ", "),
                      "; pointwise intervals; observed zeros excluded only from this log-scale panel."))
 
+  # [修改 M13 | 微信原版无此输出] 新增指定观测年龄的时间趋势图，
+  # 同时展示观测率和系数抽样的95%逐点区间，检查拟合与不确定性。
+  # 选实际观测年龄中点，避免把插值年龄重新贴成整数年龄标签。
   # 06: Observation ages are used, rather than relabelling interpolated ages.
   observation_ages <- sort(unique(observed$Age_Mid))
   targets <- c(7.5, 22.5, 42.5, 62.5, 82.5, 90)
@@ -234,6 +254,10 @@ make_blsd_demo_figures <- function(
                "Pointwise coefficient intervals and observed rates; panel-specific vertical scales.",
                width = 12, height = 8)
 
+  # [修改 M09/M10 | 微信原版 L99–108；原版只有等死亡率线]
+  # 新增同一年横断面年龄导数，并以100*(exp(导数)-1)的百分比展示；
+  # 同时新增 -时间导数/年龄导数，量化等死亡率年龄移动速度（岁/年）。
+  # 小年龄梯度筛除后保留抽样不足95%的格点显示为灰色，避免不稳定比值。
   # 07: The age derivative is shown as percent, and iso movement as years/year.
   p_age <- heatmap(age_percent, "Age_Change_Pct", "A. Local age-associated relative change",
                    "Relative change (%)", "One additional age-year at the same calendar year.")
@@ -246,6 +270,8 @@ make_blsd_demo_figures <- function(
                "Age derivative transformed draw by draw; local approximation; iso retention <95% grey.",
                width = 14, height = 6)
 
+  # [修改 M13 | 微信原版无此输出] 新增区间方向图，区分均值颜色和
+  # 95%区间是否跨零；这些是逐点区间，不是同时置信带或多重检验校正。
   # 08: Direction categories use pointwise quantiles, not the colour of a mean.
   direction <- function(x, value, valid = rep(TRUE, nrow(x))) {
     lower <- x[[paste0(value, "_lower")]]
@@ -278,6 +304,9 @@ make_blsd_demo_figures <- function(
                "Categories reflect 95% pointwise intervals, not multiplicity-adjusted evidence.",
                width = 14, height = 6)
 
+  # [修改 M13 | 微信原版 L129及无此组合图] 扩展计数诊断，新增
+  # 实际死亡数与拟合值对照、残差对拟合值图。按年龄/年份键对应原观测，
+  # 不把插值网格当新观测，也不把样本内诊断称为独立预测验证。
   # 09: Diagnostics operate on observed counts and their actual exposures.
   p_counts <- ggplot2::ggplot(observed, ggplot2::aes(x = Fitted_Deaths, y = Deaths)) +
     ggplot2::geom_abline(intercept = 0, slope = 1, colour = "grey40", linetype = 2) +
@@ -298,94 +327,6 @@ make_blsd_demo_figures <- function(
                "Observed/fitted counts and count deviance residuals; in-sample diagnostics.",
                width = 14, height = 6)
 
-  # 10: Repeated values at the same APC coordinate are represented once.
-  contribution_curve <- function(component, coordinate, title, x_label) {
-    x <- apc$summary[apc$summary$Component == component, ]
-    if (coordinate == "Cohort") x$Cohort <- x$Year - x$Age_Mid
-    x <- x[!duplicated(x[[coordinate]]), ]
-    x <- x[order(x[[coordinate]]), ]
-    ggplot2::ggplot(x, ggplot2::aes(x = .data[[coordinate]], y = Effect)) +
-      ggplot2::geom_hline(yintercept = 0, colour = "grey50", linetype = 2, linewidth = 0.3) +
-      ggplot2::geom_ribbon(ggplot2::aes(ymin = Effect_lower, ymax = Effect_upper),
-                            fill = "#2C7FB8", alpha = 0.2) +
-      ggplot2::geom_line(colour = "#2166AC", linewidth = 0.8) +
-      ggplot2::labs(title = title, x = x_label, y = "Log-rate contribution") + theme_blsd()
-  }
-  p <- combined(list(
-    contribution_curve("Age", "Age_Mid", "A. Age contribution", "Age (years)"),
-    contribution_curve("Net_Drift", "Year", "B. Constrained net period drift", "Calendar year"),
-    contribution_curve("Period_Curvature", "Year", "C. Period curvature contribution", "Calendar year"),
-    contribution_curve("Cohort_Curvature", "Cohort", "D. Cohort curvature contribution", "Approximate birth year")),
-    "Constrained APC contributions",
-    paste(interval_note, "Components depend on the grid, basis dimensions and constraints."))
-  save_figure(10, "apc_contribution_curves", p, "Constrained APC contribution curves",
-               "Log-rate contributions; curvature means nonlinear spline contribution, not a second derivative.",
-               width = 12, height = 9)
-
-  # 11: Every contribution, including the intercept and remainder, is retained.
-  component_names <- c("Intercept", "Age", "Net_Drift", "Period_Curvature",
-                        "Cohort_Curvature", "Residual_Dynamic_Surface")
-  component_titles <- c("Intercept", "Age", "Net period drift", "Period curvature",
-                         "Cohort curvature", "Projection remainder")
-  component_plots <- lapply(seq_along(component_names), function(i) {
-    x <- apc$summary[apc$summary$Component == component_names[i], ]
-    heatmap(x, "Effect", component_titles[i], "Log-rate contribution")
-  })
-  p <- combined(component_plots, "Six components of the log-rate surface",
-                 "Each panel has its own colour limits. Contributions reconstruct the original surface draw by draw.",
-                 ncol = 2)
-  save_figure(11, "six_apc_component_surfaces", p, "Six APC component surfaces",
-               "Six log-rate components; independent panel colour scales; decomposition does not improve count likelihood.",
-               width = 12, height = 13)
-
-  # 12: Compare full and projected log-rate surfaces on the same colour scale.
-  remainder_draws <- apc$component_draws$Residual_Dynamic_Surface
-  full_surface <- prediction$grid
-  full_surface$Log_Rate <- rowMeans(prediction$eta_draws)
-  apc_surface <- prediction$grid
-  apc_surface$Log_Rate <- rowMeans(prediction$eta_draws - remainder_draws)
-  remainder_surface <- prediction$grid
-  remainder_surface$Remainder <- rowMeans(remainder_draws)
-  common_limits <- range(c(full_surface$Log_Rate, apc_surface$Log_Rate), finite = TRUE)
-  if (diff(common_limits) == 0) common_limits <- common_limits + c(-0.5, 0.5)
-  p <- combined(list(
-    heatmap(full_surface, "Log_Rate", "A. Full BLSD-S", "Log mortality rate",
-              diverging = FALSE, limits = common_limits),
-    heatmap(apc_surface, "Log_Rate", "B. APC projection", "Log mortality rate",
-              diverging = FALSE, limits = common_limits),
-    heatmap(remainder_surface, "Remainder", "C. Projection remainder", "Log-rate difference")),
-    "Full surface, APC projection and remainder",
-    "A and B share colour limits; C has its own zero-centred scale. Remainder = full log-rate minus APC log-rate.",
-    ncol = 3)
-  save_figure(12, "full_apc_remainder", p, "Full, APC and remainder surfaces",
-               "Log-rate projection comparison; reconstruction is an algebraic property, not validation.",
-               width = 17, height = 6)
-
-  # 13: Transform each remainder draw; exp(mean(R)) is not mean(exp(R)).
-  multiplier <- summarize_draw_matrix(exp(remainder_draws), prediction$grid,
-                                       "Mortality_Multiplier")
-  multiplier <- tiles(multiplier)
-  multiplier_limits <- range(c(1, multiplier$Mortality_Multiplier), finite = TRUE)
-  if (diff(multiplier_limits) == 0) multiplier_limits <- c(0.99, 1.01)
-  p <- ggplot2::ggplot(multiplier, ggplot2::aes(x = Year, y = Age_Mid)) +
-    ggplot2::geom_rect(ggplot2::aes(fill = Mortality_Multiplier,
-                                   xmin = .X_Min, xmax = .X_Max,
-                                   ymin = .Y_Min, ymax = .Y_Max)) +
-    ggplot2::scale_fill_gradient2(low = "#2166AC", mid = "#F7F7F7", high = "#B2182B",
-                                   midpoint = 1, limits = multiplier_limits,
-                                   name = "Full / APC rate", na.value = "grey75") +
-    ggplot2::coord_cartesian(xlim = range(multiplier$Year), ylim = range(multiplier$Age_Mid),
-                               expand = FALSE) +
-    ggplot2::labs(title = "Mortality multiplier from the APC projection remainder",
-                  subtitle = "Mean of exp(remainder) across the same coefficient draws.",
-                  x = "Calendar year", y = "Age (years)",
-                  caption = "Above 1: full rate exceeds the APC projection rate. Below 1: full rate is lower. This is a descriptive ratio.") +
-    theme_blsd()
-  save_figure(13, "remainder_mortality_multiplier", p, "Remainder mortality multiplier",
-               "Draw-wise exp(R), then summarized; ratio of full rate to APC projection rate.")
-  utils::write.csv(multiplier[c("Age_Mid", "Year", "Mortality_Multiplier",
-                                "Mortality_Multiplier_lower", "Mortality_Multiplier_upper")],
-                    file.path(table_dir, "remainder_mortality_multiplier.csv"), row.names = FALSE)
   utils::write.csv(observed[c("Age_Mid", "Year", "Deaths", "Pop", "Fitted_Deaths",
                               "Deviance_Residual", "Pearson_Residual", "Observed_Rate", "Cohort")],
                     file.path(table_dir, "count_fit_diagnostics.csv"), row.names = FALSE)

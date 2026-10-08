@@ -1,5 +1,20 @@
 source(file.path("R", "blsd_models.R"))
 
+# Parse every shipped R script, including this test. Check executable symbols
+# and argument names, rather than words in comments or the example's cohort
+# diagnostic. The surface-only release must not call the removed projection.
+released_scripts <- list.files(".", pattern = "\\.R$", full.names = TRUE,
+                               recursive = TRUE, ignore.case = TRUE)
+removed_symbols <- c(paste0("decompose_blsd_", "a", "pc"),
+                     paste0("orthogonal_", "curvature_basis"), paste0("a", "pc"))
+for (path in released_scripts) {
+  symbols <- all.names(parse(path, encoding = "UTF-8"), functions = TRUE, unique = TRUE)
+  unexpected <- intersect(tolower(symbols), removed_symbols)
+  if (length(unexpected)) stop("Removed projection symbol in ", path, ": ",
+                               paste(unexpected, collapse = ", "))
+}
+stopifnot(identical(blsd_core_version, "2.1.2-s-only-20261009"))
+
 # Deterministic posterior draws from a surface with known derivatives:
 # eta(a, t) = 0.05*a - 0.02*t0 + 0.001*t0^2, where t0 = t - 2000.
 ages <- seq(30, 70, by = 5)
@@ -35,29 +50,6 @@ stopifnot(max(abs(fields$acceleration$Acceleration - 0.002)) < 1e-10)
 # The central age gradient is exactly 0.05.
 stopifnot(max(abs(fields$age_gradient$Age_Gradient - 0.05)) < 1e-10)
 
-# Verify that the constrained APC decomposition reconstructs every draw.
-apc <- decompose_blsd_apc(
-  prediction,
-  df_age = 4,
-  df_period = 4,
-  df_cohort = 5
-)
-reconstructed <- Reduce(`+`, apc$component_draws)
-stopifnot(max(abs(reconstructed - prediction$eta_draws)) < 1e-8)
-
-# Cohort curvature must not contain a constant or linear cohort trend.
-cohort_columns <- grep("^C_curv_", colnames(apc$design))
-cohort <- grid$Year - grid$Age_Mid
-stopifnot(max(abs(colSums(apc$design[, cohort_columns, drop = FALSE]))) < 1e-8)
-stopifnot(
-  max(abs(crossprod(cohort - mean(cohort), apc$design[, cohort_columns, drop = FALSE]))) < 1e-8
-)
-
-stopifnot(apc$diagnostics$design_rank == apc$diagnostics$design_columns,
-          max(apc$diagnostics$per_draw$Max_Abs_Reconstruction_Error) < 1e-8,
-          max(apc$diagnostics$per_draw$Max_Normalized_Residual_Crossproduct) < 1e-8)
-stopifnot(max(abs(crossprod(apc$design, apc$component_draws$Residual_Dynamic_Surface))) < 1e-8)
-
 expect_error <- function(expr) stopifnot(inherits(try(force(expr), silent = TRUE), "try-error"))
 make_prediction <- function(ages, years, fun, ndraw = 20L) {
   g <- expand.grid(Age_Mid = ages, Year = years, KEEP.OUT.ATTRS = FALSE)
@@ -88,6 +80,19 @@ flatfields <- derive_blsd_fields(flat)
 stopifnot(all(is.na(flatfields$iso_risk_velocity$Iso_Risk_Velocity)),
           !any(is.nan(flatfields$iso_risk_velocity$Iso_Risk_Velocity)),
           all(flatfields$iso_risk_velocity$Effective_Draw_Fraction == 0))
+small_gradient <- make_prediction(ages, years,
+  function(a, t) 0.003 * a - 0.01 * (t - 2000))
+screened <- derive_blsd_fields(small_gradient)$iso_risk_velocity
+stopifnot(all(is.na(screened$Iso_Risk_Velocity)),
+          all(screened$Effective_Draw_N == 0))
+half_retained <- small_gradient
+half_retained$eta_draws[, 1:10] <- matrix(
+  0.007 * half_retained$grid$Age_Mid - 0.01 * (half_retained$grid$Year - 2000),
+  nrow(half_retained$grid), 10L)
+screened <- derive_blsd_fields(half_retained)$iso_risk_velocity
+stopifnot(max(abs(screened$Iso_Risk_Velocity - 0.01/0.007)) < 1e-10,
+          all(screened$Effective_Draw_N == 10),
+          all(screened$Effective_Draw_Fraction == 0.5))
 mixed <- summarize_draw_matrix(matrix(c(1, NA, Inf, 3, NA, -Inf), nrow = 2),
                                data.frame(Cell = 1:2), "Value")
 stopifnot(identical(mixed$Value_valid_n, c(1, 1)),
@@ -95,7 +100,6 @@ stopifnot(identical(mixed$Value_valid_n, c(1, 1)),
 bad <- irregular
 bad$grid <- bad$grid[rev(seq_len(nrow(bad$grid))), ]
 expect_error(derive_blsd_fields(bad))
-expect_error(decompose_blsd_apc(bad))
 expect_error(derive_blsd_fields(irregular, min_abs_age_gradient = 0))
 expect_error(validate_blsd_axis(c(1, NA_real_), "ages"))
 expect_error(validate_blsd_axis(c(1, 1), "ages"))
@@ -162,14 +166,6 @@ test_model$Vp <- diag(c(1, 2))
 test_model$Vc <- diag(c(3, 4))
 stopifnot(attr(draw_gaussian_coefficients(test_model, 20), "covariance_diagnostics")$source == "Vc")
 
-# Distinct coefficient draws rather than copied surfaces exercise decomposition
-# reconstruction and constraints jointly, including changed grids/dimensions.
-for (df in list(c(3,3,4), c(4,4,5))) {
-  adecomp <- decompose_blsd_apc(polypred, df_age=df[1], df_period=df[2], df_cohort=df[3])
-  stopifnot(max(abs(Reduce(`+`, adecomp$component_draws)-polypred$eta_draws)) < 1e-9,
-            max(adecomp$diagnostics$per_draw$Max_Normalized_Residual_Crossproduct) < 1e-9,
-            max(abs(adecomp$diagnostics$curvature_constraints)) < 1e-8)
-}
 })()
 
 # The natural cubic temporal marginal constrains endpoint second derivatives to
@@ -200,4 +196,4 @@ expect_error(validate_blsd_data(bad_pop))
 message("All BLSD core tests passed: offset-independent analytic surfaces; regular/unequal grids;",
         " iso-risk alignment and screening; continuous interior/boundary derivatives with shared draws;",
         " invalid-input/covariance guards; natural-spline endpoint structural-zero handling;",
-        " fitted count-offset identity; every-draw APC reconstruction and constraints.")
+        " fitted count-offset identity; all released R scripts parse and remain surface-only.")

@@ -1,18 +1,11 @@
-# BLSD v2: Bayesian Lexis-Surface Dynamics prototypes
-#
-# BLSD-S   : an identifiable age-period surface model.
-# BLSD-APC : a constrained posterior decomposition of the BLSD-S surface into
-#            age, net-drift, period-curvature, cohort-curvature, and residual
-#            dynamic-surface components.
-#
-# The fitting engine below is mgcv, so posterior draws are empirical-Bayesian
-# Gaussian approximations based on the fitted coefficient covariance matrix.
-# This file is intended as a statistically coherent prototype before a full
-# state-space implementation in Stan/INLA.
+# BLSD-S：年龄—时期死亡率曲面与动态指标。
+# 曲面拟合使用 mgcv，系数抽样为经验贝叶斯高斯近似。
+# 修改注释 M01—M14 对照微信原版 BLSD_Model_Analysis.R 的真实行号。
+# 完整对照及说明见 docs/original_changes.md。
 
 required_blsd_columns <- c("Year", "Age_Mid", "Deaths", "Pop")
 
-blsd_core_version <- "2.1.1-audit-20260911"
+blsd_core_version <- "2.1.2-s-only-20261009"
 
 validate_blsd_scalar <- function(x, name, lower = 0, integer = FALSE, strict = FALSE) {
   if (!is.numeric(x) || length(x) != 1L || !is.finite(x) ||
@@ -45,6 +38,8 @@ check_blsd_packages <- function() {
   invisible(TRUE)
 }
 
+# [修改 M14 | 原版 L23—53 未进行这类输入验证]
+# 检查有限死亡数、正人口和重复单元，避免错误数据产生看似正常的结果。
 validate_blsd_data <- function(data) {
   if (!is.data.frame(data) || !nrow(data)) {
     stop("data must be a nonempty data frame.", call. = FALSE)
@@ -125,6 +120,9 @@ simulate_blsd_data <- function(
 #'
 #' This estimates the complete log-rate surface eta(age, period). It does not
 #' claim to uniquely separate linear age, period, and cohort effects.
+# [修改 M03 | 原版 L66—68]
+# 保留死亡计数响应、张量积平滑和 log(Pop) 偏置项；准 Poisson 改为负二项，
+# 显式采用 REML 选择平滑程度。改变的是方差假设与估计准则，不保证效果自动更好。
 fit_blsd_s <- function(
     data,
     k_age = 10L,
@@ -183,6 +181,9 @@ fit_blsd_s <- function(
   )
 }
 
+# [修改 M04 | 原版 L82—96 主要使用点估计，未向动态量传播系数不确定性]
+# 依据 Vc（可用时）或 Vp 抽取相关系数，每次抽样对应一张完整曲面；
+# 这是高斯后验近似，不是对所有平滑参数及离散参数的联合贝叶斯抽样。
 draw_gaussian_coefficients <- function(model, n_draws, seed = NULL) {
   validate_blsd_scalar(n_draws, "n_draws", 1, integer = TRUE)
   if (!is.null(seed)) {
@@ -221,6 +222,8 @@ draw_gaussian_coefficients <- function(model, n_draws, seed = NULL) {
   draws
 }
 
+# [修改 M04、M14 | 原版未输出这些动态量的抽样区间和有效比例]
+# 非线性量先逐抽样计算，再汇总均值与分位数；全无效行返回 NA 而非 NaN。
 summarize_draw_matrix <- function(draws, grid, value_name) {
   if (!is.matrix(draws) || !is.numeric(draws) || !ncol(draws) || nrow(draws) != nrow(grid)) {
     stop("The number of draw rows must equal the number of grid rows.", call. = FALSE)
@@ -249,6 +252,9 @@ summarize_draw_matrix <- function(draws, grid, value_name) {
 }
 
 #' Draw the BLSD-S posterior surface on an ordered rectangular in-range grid
+# [修改 M05 | 原版 L77—83]
+# 原网格延伸到 92.5 岁，超出模拟中点上限 90 岁；现网格限制在观测范围。
+# 用 Pop=1 和不含偏置项的预测矩阵得到每人对数率，再统一换算为每10万人率。
 predict_blsd_s <- function(
     object,
     ages = sort(unique(object$data$Age_Mid)),
@@ -366,6 +372,9 @@ summarize_blsd_iso <- function(draws, grid) {
 #' These are divided differences, not continuous partial derivatives.
 #' Year retains the interval END label for compatibility; metadata gives the
 #' actual interval and the centre of the three-point second difference.
+# [修改 M06 | 原版 L85—96]
+# 原加速度为对展开向量直接 diff，未除时间间隔且跨年龄组边界；
+# 现按同一年龄、同一次抽样计算区间速度与二阶差分，并输出准确时间位置。
 derive_blsd_fields <- function(prediction, min_abs_age_gradient = 0.005) {
   validate_blsd_prediction(prediction)
   validate_blsd_scalar(min_abs_age_gradient, "min_abs_age_gradient", strict = TRUE)
@@ -393,6 +402,8 @@ derive_blsd_fields <- function(prediction, min_abs_age_gradient = 0.005) {
     acceleration[, j, ] <- acceleration[, j, ] / midpoint_gap[j]
   }
 
+  # [修改 M07 | 原版未单独计算年龄导数]
+  # 不等距年龄网格使用三点局部二次插值导数，目标位置为中间年龄。
   age_gradient <- array(
     NA_real_,
     dim = c(n_age - 2L, n_year, n_draw)
@@ -408,6 +419,8 @@ derive_blsd_fields <- function(prediction, min_abs_age_gradient = 0.005) {
       left / (right * (left + right)) * eta[i + 1L, , ]
   }
 
+  # [修改 M08 | 原版无等率移动公式；此处修正后续模块的时间对齐]
+  # 区间速度对应整个区间；分母使用两端年龄梯度平均，而不是仅用末年梯度。
   midpoint_age_gradient <- (age_gradient[, 1:(n_year - 1L), , drop = FALSE] +
                               age_gradient[, 2:n_year, , drop = FALSE]) / 2
   iso_velocity <- -velocity[2:(n_age - 1L), , , drop = FALSE] /
@@ -477,6 +490,9 @@ derive_blsd_fields <- function(prediction, min_abs_age_gradient = 0.005) {
 #' forward/backward three-point first and four-point second stencils near edges.
 #' Truncation is O(h^2) on a sufficiently smooth surface; the second derivative
 #' can be O(h) at cubic-spline knots, where the third derivative jumps.
+# [修改 M06、M14 | 原版 L87—92 用极小步长作单侧差分]
+# 对预测设计矩阵求有限差分；内部用中心模板，近边界用域内单侧模板。
+# 保留步长和样条结点限制，并处理结构性零附近的浮点尾差。
 blsd_lpmatrix_derivative <- function(object, grid, variable, h, order = 1L) {
   validate_blsd_scalar(h, "finite-difference step", strict = TRUE)
   domain <- range(object$data[[variable]])
@@ -522,6 +538,9 @@ blsd_lpmatrix_derivative <- function(object, grid, variable, h, order = 1L) {
 #' Continuous log-rate derivatives aligned to the original four-figure concept.
 #' This is a separate estimator from derive_blsd_fields(). It reuses the exact
 #' coefficient draws that generated prediction, including their dependence.
+# [修改 M06 | 原版 L85—96]
+# 另计算同点的连续导数近似，并复用原预测的相同系数抽样；
+# 连续偏导与年度区间差分是不同估计量，不能混用时间标签。
 derive_blsd_continuous_fields <- function(
     object, prediction, h_age = 0.01, h_year = 0.01,
     min_abs_age_gradient = 0.005) {
@@ -547,6 +566,9 @@ derive_blsd_continuous_fields <- function(
   velocity <- dt$matrix %*% beta
   acceleration <- dtt$matrix %*% beta
   age_gradient <- da$matrix %*% beta
+  # [修改 M10 | 原版 L99—108 只有等死亡率线和视觉解读]
+  # 新增局部等率年龄移动速度 -eta_t/eta_a（岁/日历年），不是绝对等效年龄。
+  # 小分母按每次抽样屏蔽，区间需与保留比例一起阅读。
   iso <- -velocity / age_gradient
   iso[!is.finite(iso) | abs(age_gradient) < min_abs_age_gradient] <- NA_real_
   structure(list(
@@ -582,139 +604,6 @@ derive_blsd_continuous_fields <- function(
   ), class = c("blsd_continuous_fields", "blsd_fields"))
 }
 
-orthogonal_curvature_basis <- function(x, df, prefix) {
-  validate_blsd_scalar(df, paste0(prefix, "df"), 2, integer = TRUE)
-  df <- min(as.integer(df), length(unique(x)) - 2L)
-  if (df < 2L) {
-    stop("Insufficient unique values to construct the ", prefix, " curvature basis.", call. = FALSE)
-  }
-  raw <- splines::ns(x, df = df, intercept = FALSE)
-  linear_space <- cbind(1, as.numeric(scale(x, center = TRUE, scale = FALSE)))
-  residualized <- qr.resid(qr(linear_space), raw)
-  basis_qr <- qr(residualized, tol = 1e-10)
-  keep <- basis_qr$pivot[seq_len(basis_qr$rank)]
-  basis <- residualized[, sort(keep), drop = FALSE]
-  colnames(basis) <- paste0(prefix, seq_len(ncol(basis)))
-  basis
-}
-
-#' Constrained BLSD-APC posterior decomposition
-#'
-#' The decomposition is applied to every BLSD-S posterior surface draw. Period
-#' and cohort spline bases are constrained to contain neither a constant nor a
-#' linear trend. The residual dynamic surface is orthogonal to all retained APC
-#' basis columns on the requested prediction grid.
-decompose_blsd_apc <- function(
-    prediction,
-    df_age = 6L,
-    df_period = 6L,
-    df_cohort = 8L) {
-  validate_blsd_prediction(prediction)
-  grid <- prediction$grid
-  age_centered <- as.numeric(scale(grid$Age_Mid, center = TRUE, scale = FALSE))
-  period_centered <- as.numeric(scale(grid$Year, center = TRUE, scale = FALSE))
-  cohort <- grid$Year - grid$Age_Mid
-
-  age_curvature <- orthogonal_curvature_basis(grid$Age_Mid, df_age, "A_curv_")
-  period_curvature <- orthogonal_curvature_basis(grid$Year, df_period, "P_curv_")
-  cohort_curvature <- orthogonal_curvature_basis(cohort, df_cohort, "C_curv_")
-
-  design <- cbind(
-    Intercept = 1,
-    Age_linear = age_centered,
-    Net_drift = period_centered,
-    age_curvature,
-    period_curvature,
-    cohort_curvature
-  )
-  design_qr <- qr(design, tol = 1e-9)
-  if (design_qr$rank < ncol(design)) {
-    stop(
-      "The requested APC basis is rank deficient on this grid. ",
-      "Reduce df_age, df_period, or df_cohort.",
-      call. = FALSE
-    )
-  }
-
-  coefficients <- qr.coef(design_qr, prediction$eta_draws)
-  coefficient_names <- rownames(coefficients)
-  component_columns <- list(
-    Intercept = match("Intercept", coefficient_names),
-    Age = c(
-      match("Age_linear", coefficient_names),
-      grep("^A_curv_", coefficient_names)
-    ),
-    Net_Drift = match("Net_drift", coefficient_names),
-    Period_Curvature = grep("^P_curv_", coefficient_names),
-    Cohort_Curvature = grep("^C_curv_", coefficient_names)
-  )
-
-  component_draws <- lapply(component_columns, function(index) {
-    design[, index, drop = FALSE] %*% coefficients[index, , drop = FALSE]
-  })
-  fitted_apc <- design %*% coefficients
-  component_draws$Residual_Dynamic_Surface <- prediction$eta_draws - fitted_apc
-  reconstruction_error <- apply(abs(Reduce(`+`, component_draws) - prediction$eta_draws), 2L, max)
-  residual_crossproduct <- crossprod(design, component_draws$Residual_Dynamic_Surface)
-  column_norms <- sqrt(colSums(design^2))
-  normalized_orthogonality <- apply(abs(residual_crossproduct / column_norms), 2L, max)
-  curvature_constraints <- do.call(rbind, lapply(list(
-    Age = list(x = grid$Age_Mid, basis = age_curvature),
-    Period = list(x = grid$Year, basis = period_curvature),
-    Cohort = list(x = cohort, basis = cohort_curvature)
-  ), function(z) {
-    data.frame(Max_Abs_Constant_Crossproduct = max(abs(colSums(z$basis))),
-      Max_Abs_Linear_Crossproduct = max(abs(crossprod(z$x - mean(z$x), z$basis))))
-  }))
-
-  summaries <- lapply(names(component_draws), function(component) {
-    result <- summarize_draw_matrix(
-      component_draws[[component]],
-      grid,
-      "Effect"
-    )
-    result$Component <- component
-    result
-  })
-
-  structure(
-    list(
-      summary = do.call(rbind, summaries),
-      component_draws = component_draws,
-      coefficients = coefficients,
-      design = design,
-      grid = grid,
-      diagnostics = list(
-        design_rank = design_qr$rank, design_columns = ncol(design),
-        design_condition_number = kappa(design, exact = TRUE),
-        requested_basis_df = c(age = df_age, period = df_period, cohort = df_cohort),
-        retained_curvature_columns = c(age = ncol(age_curvature), period = ncol(period_curvature), cohort = ncol(cohort_curvature)),
-        curvature_constraints = curvature_constraints,
-        per_draw = data.frame(Draw = seq_len(prediction$n_draws),
-          Max_Abs_Reconstruction_Error = reconstruction_error,
-          Max_Normalized_Residual_Crossproduct = normalized_orthogonality,
-          Residual_Surface_RMS = sqrt(colMeans(component_draws$Residual_Dynamic_Surface^2))),
-        projection_weight = "Equal weight for every requested age-period grid cell; cohort frequency is induced by this grid",
-        projection_penalty = "None: unpenalized QR projection of the already penalized BLSD-S surface",
-        core_version = blsd_core_version
-      ),
-      drift_summary = summarize_draw_matrix(
-        coefficients[match("Net_drift", coefficient_names), , drop = FALSE],
-        data.frame(Quantity = "Constrained net linear period drift; log-rate/calendar-year"), "Net_Drift"),
-      constraints = c(
-        "Age, period and cohort curvature bases are orthogonal to constants under equal grid-cell weights.",
-        "Age, period and cohort curvature bases are orthogonal to their own linear trends under equal grid-cell weights.",
-        "The residual dynamic surface is orthogonal to the retained APC design on the prediction grid.",
-        "The residual dynamic surface is a log-rate projection remainder, distinct from count deviance residuals.",
-        "Curvature components describe nonlinear spline contributions, not second-derivative arrays.",
-        "No separately identified linear cohort trend or unique causal APC effect is claimed.",
-        "Drift and nonlinear components depend on the chosen grid, dimensions and constraints; report sensitivity analyses."
-      )
-    ),
-    class = "blsd_apc"
-  )
-}
-
 plot_blsd_field <- function(
     data,
     value,
@@ -743,6 +632,8 @@ plot_blsd_field <- function(
   plot
 }
 
+# [修改 M13 | 原版 L70 只输出模型概要]
+# 补充平滑充分性及共曲率诊断；数值收敛不代表模型已经充分刻画数据。
 diagnose_blsd_s <- function(object) {
   if (!inherits(object, "blsd_s")) {
     stop("object must be returned by fit_blsd_s().", call. = FALSE)
