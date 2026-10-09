@@ -6,7 +6,13 @@ script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
 if (!length(script_arg)) stop("Run this file with Rscript.")
 script_path <- normalizePath(sub("^--file=", "", script_arg[1L]), mustWork = TRUE)
 repo_dir <- dirname(dirname(script_path))
-source(file.path(repo_dir, "R", "wechat_example.R"), local = TRUE)
+previous_run_demo <- getOption("blsd.run_demo")
+tryCatch({
+  options(blsd.run_demo = FALSE)
+  source(file.path(repo_dir, "BLSD_Model_Analysis.R"), local = TRUE)
+}, finally = options(blsd.run_demo = previous_run_demo))
+stopifnot(identical(getOption("blsd.run_demo"), previous_run_demo))
+stopifnot(identical(blsd_core_version, "2.1.3-singlefile-20261009"))
 
 assert <- function(ok, message) {
   if (!isTRUE(ok)) stop(message, call. = FALSE)

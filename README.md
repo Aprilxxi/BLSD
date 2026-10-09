@@ -1,10 +1,10 @@
 # BLSD-S：死亡率曲面与动态指标示例
 
-本仓库提供可直接运行的 R 示例：根据模拟死亡数和匹配人口估计年龄—时期死亡率曲面，计算时间变化、加速度、年龄梯度和等死亡率年龄移动速度。运行后生成 **9 组图表**，每组保存 PNG 和 PDF，并输出结果表供复核。
+本仓库直接在微信原版 `BLSD_Model_Analysis.R` 的基础上修改。**数据模拟、模型拟合、指标计算、九组图表和结果保存都写在同一个根目录脚本中**，按原版“0. 环境准备、1. 数据模拟、2. 模型构建、3. 挖掘与可视化、4. 输出展示”的顺序组织。脚本根据模拟死亡数和匹配人口估计年龄—时期死亡率曲面，计算时间变化、加速度、年龄梯度和等死亡率年龄移动速度。
 
-数据完整复现微信原脚本的模拟流程：`set.seed(123)`、1990—2019 年、18 个年龄组，共 540 个观测。`data/wechat_example.csv` 是模拟数据。原例死亡数由 Poisson 分布生成，当前默认用负二项模型分析，数据生成和拟合假设分别说明。
+数据完整复现微信原脚本的模拟流程：`set.seed(123)`、1990—2019 年、18 个年龄组，共 540 个观测。脚本运行时自行生成数据，`data/wechat_example.csv` 仅为核对用的模拟快照，运行不依赖这个 CSV。原例死亡数由 Poisson 分布生成，当前默认用负二项模型分析，数据生成和拟合假设分别说明。
 
-代码中的 **`[修改 M01]` 至 `[修改 M14]`** 注释写明原版行号、修改内容和作用。入口脚本提供导航，具体注释放在相应计算附近。完整对照见 [原版修改说明](docs/original_changes.md)。
+根脚本中的 **`[修改 M01]` 至 `[修改 M14]`** 注释放在对应计算与绘图代码附近，写明原版行号、修改内容和作用。完整对照见 [原版修改说明](docs/original_changes.md)。本版本仅包含 BLSD-S 曲面和动态指标。
 
 ## 快速运行
 
@@ -15,21 +15,31 @@ Rscript install_dependencies.R
 Rscript BLSD_Model_Analysis.R
 ~~~
 
-依赖为 `mgcv`、`ggplot2` 和 `gridExtra`。在 R 或 RStudio 中，也可将工作目录设为仓库根目录后执行：
+依赖为 `mgcv`、`ggplot2` 和 `gridExtra`。首次使用可以运行上述安装脚本；已安装这三个包时，只需运行 `BLSD_Model_Analysis.R`。在 R 或 RStudio 中，将工作目录设为仓库根目录后执行：
 
 ~~~r
 source("install_dependencies.R")
 source("BLSD_Model_Analysis.R")
 ~~~
 
-默认输出目录为 `outputs/demo`，系数抽样次数为 1,000。快速检查图表生成可使用：
+第二条语句直接执行同文件内的完整分析，默认输出至 `outputs/demo`，生成 **9 组 PNG／PDF 和 17 张 CSV 表**，系数抽样次数为 1,000。复制根脚本到另一个目录也可以运行；安装依赖后不需要其他分析文件。
+
+快速检查图表生成可使用：
 
 ~~~sh
 Rscript BLSD_Model_Analysis.R --draws=300 --output=outputs/demo_smoke
 Rscript BLSD_Model_Analysis.R --help
 ~~~
 
-正式使用应检查抽样次数与区间的稳定性。
+命令行还支持 `--seed=123` 和 `--age-step=1`。默认数据种子 123 用于复现微信例子；改变种子会生成另一组模拟数据。正式使用应检查抽样次数与区间的稳定性。
+
+如只想加载函数以便检查或自定义使用，可以关闭自动运行：
+
+~~~r
+options(blsd.run_demo = FALSE)
+source("BLSD_Model_Analysis.R")
+options(blsd.run_demo = TRUE)
+~~~
 
 ## 九组图表
 
@@ -68,12 +78,9 @@ Rscript BLSD_Model_Analysis.R --help
 
 | 路径 | 用途 |
 |---|---|
-| `BLSD_Model_Analysis.R` | 一键运行入口及修改编号导航 |
+| `BLSD_Model_Analysis.R` | 完整单文件分析：模拟、模型、抽样、导数、九图与结果保存，含 M01–M14 对照注释 |
 | `install_dependencies.R` | 安装所需 R 包 |
-| `analysis/run_blsd_demo.R` | 模拟、拟合、计算和保存结果的流程 |
-| `R/wechat_example.R` | 复现原微信示例数据生成机制 |
-| `R/blsd_models.R` | 曲面拟合、抽样和动态指标 |
-| `R/blsd_plotting.R` | 九组图表及显示尺度 |
+| `data/wechat_example.csv` | 原种子模拟数据快照，供核对；脚本不读取该文件 |
 | `docs/original_changes.md` | M01–M14 原版逐项对照 |
 | `docs/methods.md` | 数据生成、模型、指标与参考文献 |
 | `docs/validation.md` | 实际验证记录 |
@@ -83,6 +90,8 @@ Rscript BLSD_Model_Analysis.R --help
 | `outputs/demo/tables/` | 图表清单和结果表 |
 
 完整对象保存在运行目录的 `demo_result.rds`，便于复核同一组系数抽样。`outputs/` 被版本控制忽略；仓库发布源代码、模拟 CSV、方法文档和九组示例图表。
+
+根脚本内的 `simulate_wechat_example()` 生成原例数据，`fit_blsd_s()` 拟合曲面，`predict_blsd_s()` 和 `derive_blsd_*_fields()` 计算率及动态量，`make_blsd_demo_figures()` 包含九图代码，`run_blsd_demo()` 按顺序执行并保存。这些函数均在同一文件内定义。
 
 运行后可检查数据与数值结果：
 

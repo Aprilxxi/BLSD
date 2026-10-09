@@ -1,6 +1,6 @@
 # BLSD-S 示例图表
 
-本目录展示微信原版模拟数据上的九组图，分别保存 PNG 和 PDF。默认设置为数据种子 123、1,000 次系数抽样，1990—2019 年和 18 个年龄组。实际生成信息以 [图表清单](figure_manifest.csv) 为准。
+本目录展示微信原版模拟数据上的九组图，分别保存 PNG 和 PDF。所有绘图代码直接包含在根目录 [BLSD_Model_Analysis.R](../BLSD_Model_Analysis.R) 的 `make_blsd_demo_figures()` 中，与数据、模型和输出代码在同一文件。默认设置为数据种子 123、1,000 次系数抽样，1990—2019 年和 18 个年龄组。实际生成信息以 [图表清单](figure_manifest.csv) 为准。
 
 | 图 | PNG | PDF | 含义 |
 |---|---|---|---|
@@ -20,4 +20,4 @@
 
 图 04 为原版残差诊断，黑色曲线不代表独立的队列效应。图 08 未作多重比较校正；图 09 是样本内检查。
 
-复现时在仓库根目录运行 `Rscript BLSD_Model_Analysis.R`，图保存至 `outputs/demo/figures/`。见 [M01–M14 对照](../docs/original_changes.md) 和 [方法说明](../docs/methods.md)。
+复现时，安装依赖后在仓库根目录运行 `Rscript BLSD_Model_Analysis.R`，或在 R 中执行 `source("BLSD_Model_Analysis.R")`。脚本自行生成微信例子的数据并完成绘图，不依赖其他分析文件或已保存的 CSV。图保存至 `outputs/demo/figures/`，17 张结果表保存至 `outputs/demo/tables/`。见 [M01–M14 对照](../docs/original_changes.md) 和 [方法说明](../docs/methods.md)。

@@ -132,6 +132,11 @@ assert(file.exists(rds_path), "Saved demonstration result is missing.")
 result <- readRDS(rds_path)
 required <- c("data", "fit", "prediction", "discrete_fields", "continuous_fields", "transformed")
 assert(all(required %in% names(result)), "Saved demonstration result lacks required components.")
+expected_version <- "2.1.3-singlefile-20261009"
+assert(identical(result$fit$specification$core_version, expected_version) &&
+         identical(result$prediction$core_version, expected_version) &&
+         identical(result$continuous_fields$diagnostics$core_version, expected_version),
+       "The saved demonstration must come from the canonical single-file release.")
 assert(!any(grepl(removed_names, names(result), ignore.case = TRUE)),
        "The saved result still contains a removed projection component.")
 data <- result$data

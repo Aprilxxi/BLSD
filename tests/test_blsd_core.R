@@ -1,10 +1,19 @@
-source(file.path("R", "blsd_models.R"))
+previous_run_demo <- getOption("blsd.run_demo")
+tryCatch({
+  options(blsd.run_demo = FALSE)
+  source("BLSD_Model_Analysis.R")
+}, finally = options(blsd.run_demo = previous_run_demo))
+stopifnot(identical(getOption("blsd.run_demo"), previous_run_demo))
 
-# Parse every shipped R script, including this test. Check executable symbols
+# Parse the scripts actually shipped to users, including this test. Ignore
+# output archives: an archived earlier release is not executable release code.
+# Check executable symbols
 # and argument names, rather than words in comments or the example's cohort
 # diagnostic. The surface-only release must not call the removed projection.
-released_scripts <- list.files(".", pattern = "\\.R$", full.names = TRUE,
-                               recursive = TRUE, ignore.case = TRUE)
+released_scripts <- c("BLSD_Model_Analysis.R", "install_dependencies.R",
+  list.files("tests", pattern = "\\.R$", full.names = TRUE,
+             recursive = TRUE, ignore.case = TRUE))
+stopifnot(all(file.exists(released_scripts)))
 removed_symbols <- c(paste0("decompose_blsd_", "a", "pc"),
                      paste0("orthogonal_", "curvature_basis"), paste0("a", "pc"))
 for (path in released_scripts) {
@@ -13,7 +22,20 @@ for (path in released_scripts) {
   if (length(unexpected)) stop("Removed projection symbol in ", path, ": ",
                                paste(unexpected, collapse = ", "))
 }
-stopifnot(identical(blsd_core_version, "2.1.2-s-only-20261009"))
+stopifnot(identical(blsd_core_version, "2.1.3-singlefile-20261009"))
+
+# The canonical analysis must contain its own model, simulation and plotting
+# definitions. Source/data-loader calls would make the single file depend on
+# scripts or pre-existing demonstration data outside that file.
+canonical_symbols <- all.names(parse("BLSD_Model_Analysis.R", encoding = "UTF-8"),
+                               functions = TRUE, unique = TRUE)
+dependency_loaders <- c("source", "sys.source", "read.csv", "read.csv2",
+                       "read.table", "readRDS", "load", "dget")
+unexpected_loaders <- intersect(canonical_symbols, dependency_loaders)
+if (length(unexpected_loaders)) stop("Canonical analysis has an external loader: ",
+                                     paste(unexpected_loaders, collapse = ", "))
+stopifnot(exists("simulate_wechat_example", mode = "function"),
+          exists("run_blsd_demo", mode = "function"))
 
 # Deterministic posterior draws from a surface with known derivatives:
 # eta(a, t) = 0.05*a - 0.02*t0 + 0.001*t0^2, where t0 = t - 2000.
