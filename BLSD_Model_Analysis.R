@@ -184,15 +184,23 @@ p6 <- ggplot(trends, aes(Year, Value)) +
        y = "Deaths per 100,000", caption = "Points: observed rates. Ribbons: 95% pointwise intervals.")
 
 # 图7：年龄梯度换成百分比，并展示等死亡率移动速度（M07、M09、M10）。
-# 当前年龄变化均值全为正；顺序配色按实际范围显示大小，避免都挤在红色中。
+# 两图协调使用绿色：左图浅绿到深绿表示大小，右图紫负、白零、绿正。
+p7_theme <- theme(legend.position = "bottom", plot.title = element_text(size = 11),
+                  plot.caption = element_text(size = 8))
 p7_age <- ggplot(age_percent, aes(Year, Age_Mid, fill = Value)) +
   geom_raster() +
-  scale_fill_viridis_c(option = "D", na.value = "grey75", name = "Relative change (%)") +
+  scale_fill_gradient(low = "#E5F5E0", high = "#238B45", na.value = "grey75",
+                      name = "Relative change (%)") +
   labs(title = "A. Local age-associated change", x = "Calendar year", y = "Age (years)",
-       caption = "Local one-age-year approximation; colours show magnitude.")
-p7_iso <- field_plot(iso, "B. Equal-mortality age movement",
-                     "Age-years / year") +
-  labs(caption = "Grey: fewer than 95% of draws retained; positive: movement to older ages.")
+       caption = "Local one-age-year approximation.") + p7_theme
+iso_limit <- max(abs(iso$Value), na.rm = TRUE)
+p7_iso <- ggplot(iso, aes(Year, Age_Mid, fill = Value)) +
+  geom_raster() +
+  scale_fill_gradient2(low = "#756BB1", mid = "#F7F7F7", high = "#238B45",
+                       midpoint = 0, limits = c(-iso_limit, iso_limit),
+                       na.value = "grey75", name = "Age-years / year") +
+  labs(title = "B. Equal-mortality age movement", x = "Calendar year", y = "Age (years)",
+       caption = "Purple: lower-age shift; green: higher-age shift.\nGrey: fewer than 95% of draws retained.") + p7_theme
 
 # 4. 在RStudio中显示，与原版一样不保存图片、表格或模型文件。
 # 前六张图进入Plots历史，图7左右并列；点击上一张/下一张查看。
