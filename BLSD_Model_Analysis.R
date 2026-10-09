@@ -184,9 +184,12 @@ p6 <- ggplot(trends, aes(Year, Value)) +
        y = "Deaths per 100,000", caption = "Points: observed rates. Ribbons: 95% pointwise intervals.")
 
 # 图7：年龄梯度换成百分比，并展示等死亡率移动速度（M07、M09、M10）。
-p7_age <- field_plot(age_percent, "A. Local age-associated change",
-                     "Relative change (%)") +
-  labs(caption = "Local one-age-year approximation.")
+# 当前年龄变化均值全为正；顺序配色按实际范围显示大小，避免都挤在红色中。
+p7_age <- ggplot(age_percent, aes(Year, Age_Mid, fill = Value)) +
+  geom_raster() +
+  scale_fill_viridis_c(option = "D", na.value = "grey75", name = "Relative change (%)") +
+  labs(title = "A. Local age-associated change", x = "Calendar year", y = "Age (years)",
+       caption = "Local one-age-year approximation; colours show magnitude.")
 p7_iso <- field_plot(iso, "B. Equal-mortality age movement",
                      "Age-years / year") +
   labs(caption = "Grey: fewer than 95% of draws retained; positive: movement to older ages.")
