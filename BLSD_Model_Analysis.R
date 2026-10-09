@@ -184,23 +184,28 @@ p6 <- ggplot(trends, aes(Year, Value)) +
        y = "Deaths per 100,000", caption = "Points: observed rates. Ribbons: 95% pointwise intervals.")
 
 # 图7：年龄梯度换成百分比，并展示等死亡率移动速度（M07、M09、M10）。
-# 两图协调使用绿色：左图浅绿到深绿表示大小，右图紫负、白零、绿正。
-p7_theme <- theme(legend.position = "bottom", plot.title = element_text(size = 11),
-                  plot.caption = element_text(size = 8))
+# 两图使用同一套蓝—白—橙色板，刻度各自独立；右图白色固定对应零。
+p7_colors <- c("#346D8C", "#F7F5F0", "#CE8D5E")
+p7_theme <- theme(legend.position = "bottom", panel.grid = element_blank(),
+                  plot.title = element_text(size = 11, face = "bold"),
+                  plot.caption = element_text(size = 8, colour = "#555555"))
+p7_guide <- guides(fill = guide_colourbar(title.position = "top",
+                    barwidth = grid::unit(4, "cm"), barheight = grid::unit(0.25, "cm")))
 p7_age <- ggplot(age_percent, aes(Year, Age_Mid, fill = Value)) +
   geom_raster() +
-  scale_fill_gradient(low = "#E5F5E0", high = "#238B45", na.value = "grey75",
-                      name = "Relative change (%)") +
-  labs(title = "A. Local age-associated change", x = "Calendar year", y = "Age (years)",
-       caption = "Local one-age-year approximation.") + p7_theme
+  scale_fill_gradientn(colours = p7_colors, na.value = "grey75", name = "Relative change (%)") +
+  coord_cartesian(expand = FALSE) +
+  labs(title = "A. Age gradient", x = "Calendar year", y = "Age (years)",
+       caption = "Local one-age-year approximation.\nBlue: lower; orange: higher.") + p7_theme + p7_guide
 iso_limit <- max(abs(iso$Value), na.rm = TRUE)
 p7_iso <- ggplot(iso, aes(Year, Age_Mid, fill = Value)) +
   geom_raster() +
-  scale_fill_gradient2(low = "#756BB1", mid = "#F7F7F7", high = "#238B45",
+  scale_fill_gradient2(low = p7_colors[1], mid = p7_colors[2], high = p7_colors[3],
                        midpoint = 0, limits = c(-iso_limit, iso_limit),
                        na.value = "grey75", name = "Age-years / year") +
-  labs(title = "B. Equal-mortality age movement", x = "Calendar year", y = "Age (years)",
-       caption = "Purple: lower-age shift; green: higher-age shift.\nGrey: fewer than 95% of draws retained.") + p7_theme
+  coord_cartesian(expand = FALSE) +
+  labs(title = "B. Equal-mortality shift", x = "Calendar year", y = "Age (years)",
+       caption = "Blue: lower-age shift; orange: higher-age shift.\nGrey: fewer than 95% of draws retained.") + p7_theme + p7_guide
 
 # 4. 在RStudio中显示，与原版一样不保存图片、表格或模型文件。
 # 前六张图进入Plots历史，图7左右并列；点击上一张/下一张查看。
