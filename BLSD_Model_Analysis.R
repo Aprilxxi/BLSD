@@ -1,7 +1,6 @@
 # ============================================================
-# BLSD-S：微信原版的精简修改版
+# BLSD-S
 # 在RStudio运行整段代码或 source("BLSD_Model_Analysis.R")。
-# 图形直接显示在Plots；用上一张/下一张查看，也可单独 print(p1)。
 # ============================================================
 
 # 0. 环境准备（修改 M01：只保留实际使用的三个包）
@@ -135,9 +134,12 @@ p1 <- ggplot(surface, aes(Year, Age_Mid)) +
        x = "Calendar year", y = "Age (years)")
 
 # 图2：原版 L115—123实际是一阶速度；现换算为百分比（M06、M09）。
+# 保留原版等高线：线与颜色都表示相同的局部年度变化百分比。
 p2 <- field_plot(velocity_percent, "Local annual mortality change",
                  "Relative change (%)") +
-  labs(caption = "Local one-calendar-year approximation; colours show the mean.")
+  geom_contour(aes(x = Year, y = Age_Mid, z = Value), inherit.aes = FALSE,
+               bins = 10, colour = "black", linewidth = 0.25, alpha = 0.35) +
+  labs(caption = "Local one-calendar-year approximation; contours show equal relative change (%).")
 
 # 图3：新增真正的二阶时间导数，保持对数率/年²单位（M06）。
 p3 <- field_plot(acceleration, "Temporal acceleration of log mortality",
