@@ -1,6 +1,6 @@
 # BLSD-S 示例的方法说明
 
-本示例在微信原版基础上保留数据生成机制，用负二项年龄—时期平滑曲面估计死亡率，计算动态指标并在 RStudio 中显示七组图。全部实现位于 [BLSD_Model_Analysis.R](../BLSD_Model_Analysis.R)，无需其他分析脚本或输入文件。
+本示例在微信原版基础上保留数据生成机制，用年龄—时期平滑曲面估计死亡率，计算动态指标并在 RStudio 中显示七组图。[准 Poisson＋GCV 版本](../BLSD_Model_Analysis_QuasiPoisson_GCV.R) 与 [负二项＋REML 版本](../BLSD_Model_Analysis.R) 均为可独立运行的单脚本，使用相同模拟数据和绘图流程。
 
 ## 1. 数据与模型
 
@@ -16,7 +16,7 @@ $$
 
 死亡数按原版生成：$Y_{a,t}\sim\operatorname{Poisson}[E_{a,t}\exp\{\eta_{\mathrm{sim}}(a,t)\}]$。随机数调用顺序与人口取整均保留。
 
-分析采用负二项分布：
+负二项＋REML 版本采用：
 
 $$
 Y_{a,t}\sim\operatorname{NegBin}(\mu_{a,t},\theta),\qquad
@@ -28,7 +28,16 @@ $$
 \eta(a,t)=\alpha+f(a,t).
 $$
 
-$\log E_{a,t}$ 是已知人口偏置项，$f$ 是年龄和时期的三次回归样条张量积，两个方向基维度均为 10。使用 `mgcv::gam()` 和 REML 估计平滑程度。负二项提供完整计数分布；原版准 Poisson 同样允许过度离散，更换分布不意味着必然改善拟合。[负二项说明](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/negbin.html)
+$\log E_{a,t}$ 是已知人口偏置项，$f$ 是年龄和时期的三次回归样条张量积，两个方向基维度均为 10。负二项版本使用 `mgcv::gam()` 和 REML 估计平滑程度。[负二项说明](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/negbin.html)
+
+准 Poisson＋GCV 版本保留相同的对数均值模型，指定：
+
+$
+\mathrm{E}(Y_{a,t})=\mu_{a,t},\qquad
+\operatorname{Var}(Y_{a,t})=\phi\mu_{a,t}.
+$
+
+使用 `family = quasipoisson(link = "log")` 和 `method = "GCV.Cp"`；离散尺度未知并由数据估计，因此实际采用 GCV 选择平滑程度，与微信原版的默认拟合方法一致。准 Poisson 指定均值—方差关系，未指定完整计数概率分布；更换拟合方式不意味着必然改善拟合。[gam 拟合方法](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/gam.html)
 
 预测网格限定在数据年龄和年份范围内，人口取 1。预测矩阵得到对数死亡率 $\eta=X\beta$，图中死亡率为 $100000\exp(\eta)$。二维死亡率平滑已有研究基础；张量积构造和 REML 分别参见 [mgcv 文档](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/te.html)、Wood (2011) 和 Currie 等 (2004)。
 
@@ -41,9 +50,9 @@ $$
 \eta^{(s)}=X\beta^{(s)}.
 $$
 
-优先采用平滑参数不确定性修正协方差 `Vc`，没有该矩阵时采用 `Vp`。同一次抽样在全部预测位置使用同一组系数，从而保留位置间和指标间的相关性。[系数协方差说明](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/vcov.gam.html)
+负二项版本优先采用平滑参数不确定性修正协方差 `Vc`，没有该矩阵时采用 `Vp`。准 Poisson＋GCV 版本采用 `Vp`；该矩阵已包含估计的离散尺度 $\widehat\phi$，不再重复乘以离散尺度，其区间条件于估计的平滑参数和离散尺度。同一次抽样在全部预测位置使用同一组系数，从而保留位置间和指标间的相关性。[系数协方差说明](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/vcov.gam.html)
 
-死亡率、导数、百分比和比值逐抽样计算，再汇总均值和 2.5%、97.5% 分位数。区间是逐点的经验贝叶斯高斯近似区间，未联合抽样全部平滑参数和负二项离散参数，不是同时区间或未来死亡数的预测区间。[衍生量抽样示例](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/predict.gam.html)
+死亡率、导数、百分比和比值逐抽样计算，再汇总均值和 2.5%、97.5% 分位数。区间是逐点的系数高斯近似区间；准 Poisson 版本不将其称为完整计数似然下的贝叶斯后验。二者均未联合抽样全部平滑参数及离散参数，不是同时区间或未来死亡数的预测区间。[衍生量抽样示例](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/predict.gam.html)
 
 ## 3. 动态指标
 
@@ -91,4 +100,3 @@ $$
 1. Wood SN. Fast stable restricted maximum likelihood and marginal likelihood estimation of semiparametric generalized linear models. *Journal of the Royal Statistical Society: Series B*. 2011;73(1):3–36. [DOI: 10.1111/j.1467-9868.2010.00749.x](https://doi.org/10.1111/j.1467-9868.2010.00749.x).
 2. Wood SN. *Generalized Additive Models: An Introduction with R*. 2nd ed. Chapman and Hall/CRC; 2017. [DOI: 10.1201/9781315370279](https://doi.org/10.1201/9781315370279).
 3. Currie ID, Durbán M, Eilers PHC. Smoothing and forecasting mortality rates. *Statistical Modelling*. 2004;4(4):279–298. [DOI: 10.1191/1471082X04st080oa](https://doi.org/10.1191/1471082X04st080oa).
-

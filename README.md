@@ -1,8 +1,13 @@
 # BLSD-S：死亡率曲面与动态指标示例
 
-在微信原版 `BLSD_Model_Analysis.R` 上修改的精简示例。保留原版的数据模拟和顺序式分析结构，增加死亡率不确定性、正确的时间加速度、年龄梯度及等死亡率年龄移动速度。计算和绘图均在同一个 R 文件内。
+在微信原版 `BLSD_Model_Analysis.R` 上修改的精简示例。保留原版的数据模拟和顺序式分析结构，增加死亡率不确定性、正确的时间加速度、年龄梯度及等死亡率年龄移动速度。每个版本的计算和绘图均在一个独立 R 文件内。
 
-脚本使用原版 `set.seed(123)`，模拟 1990—2019 年、18 个年龄组，共 540 个观测。死亡数按原版 Poisson 分布生成，分析模型改为负二项张量积平滑模型，并用 REML 选择平滑程度。
+两个版本均使用原版 `set.seed(123)`，模拟 1990—2019 年、18 个年龄组，共 540 个观测；死亡数按原版 Poisson 分布生成。二者使用相同数据和七组图，仅拟合方式与系数协方差的处理不同。
+
+| 脚本 | 拟合方式 |
+|---|---|
+| [BLSD_Model_Analysis_QuasiPoisson_GCV.R](BLSD_Model_Analysis_QuasiPoisson_GCV.R) | 准 Poisson＋GCV，沿用微信原版的拟合设置 |
+| [BLSD_Model_Analysis.R](BLSD_Model_Analysis.R) | 负二项＋REML，保留已有版本 |
 
 ## 在 RStudio 中运行
 
@@ -12,11 +17,13 @@
 install.packages(c("mgcv", "ggplot2", "gridExtra"))
 ~~~
 
-打开 [BLSD_Model_Analysis.R](BLSD_Model_Analysis.R)，点击 **Source**，或选中全部代码运行。也可以将工作目录设为脚本所在目录后执行：
+打开所需版本，点击 **Source**，或选中全部代码运行。准 Poisson＋GCV 版本也可在脚本目录执行：
 
 ~~~r
-source("BLSD_Model_Analysis.R")
+source("BLSD_Model_Analysis_QuasiPoisson_GCV.R")
 ~~~
+
+负二项＋REML 版本执行 `source("BLSD_Model_Analysis.R")`。
 
 图表直接显示在 RStudio 的 **Plots** 面板，点击左、右箭头查看本次运行的图形历史。脚本不自动导出图片、表格或模型文件。数据、模型和绘图对象保留在 R 环境中，便于交互查看。
 
@@ -42,7 +49,7 @@ source("BLSD_Model_Analysis.R")
 
 源码中的 `[修改 Mxx]` 注释说明原版位置、调整内容和原因。主要修改包括：
 
-- 准 Poisson 改为负二项，显式使用 REML。
+- 提供准 Poisson＋GCV 和负二项＋REML 两个拟合版本。
 - 通过 1,000 次相关系数抽样，传播死亡率及衍生指标的不确定性。
 - 直接在同一年龄、时期位置计算一、二阶导数，修正原版展开向量做差的问题。
 - 时间与年龄梯度换算为百分比，新增加速度和年龄移动图。
@@ -51,4 +58,4 @@ source("BLSD_Model_Analysis.R")
 
 详细对照见 [原版修改说明](docs/original_changes.md)，公式与参考文献见 [方法说明](docs/methods.md)。
 
-`85+` 组取 90 岁是原版的模拟假设。图表属于示例分析；1,000 次系数抽样是经验贝叶斯高斯近似，区间是逐点区间，不是整张曲面的同时区间或未来死亡数预测区间。
+`85+` 组取 90 岁是原版的模拟假设。图表属于示例分析；准 Poisson＋GCV 版本使用 `Vp`，其已包含估计的离散尺度；高斯近似区间条件于估计的平滑参数和离散尺度，不代表完整计数似然下的贝叶斯后验。两版均使用 1,000 次系数抽样，区间是逐点区间，不是整张曲面的同时区间或未来死亡数预测区间。
