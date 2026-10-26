@@ -3,21 +3,26 @@
 # 用法：在网页下载“完整分析归档”或“结果表格”，填写下面的 input_path，
 # 然后在 RStudio 中 Source 整份脚本。留空时弹出文件选择框。
 # 支持多组 ZIP、解压后的目录、单个 results.json 或九工作表 .xlsx。
-# 推荐完整分析归档：其中保留原始等高线顶点、残差平滑和默认曲线坐标。
-# Excel 不含上述图层；读取 Excel 时省略这些图层，不重新估计平滑线或等高线。
+# 推荐完整分析归档：其中保留原始等高线顶点、诊断结果和默认曲线坐标。
+# Excel 未保存等高线顶点；读取 Excel 时省略等高线，不重新估计。
+# 第四图按稿件 Figure 3D：拟合率（每十万人，对数横轴）与偏差残差，按年龄着色。
+# 稿件符号：g_t=时期对数率斜率，g_a=年龄对数率斜率，c_t=时期对数率曲率；
+# A_t=100*expm1(g_t)，A_a=100*expm1(g_a)，v=-g_t/g_a（等率年龄移动）。
+# 机器字段 annual/gradient/acceleration/shift 保留下载格式。
 # 全部数值、95% UI、缺失值和每个指标的屏蔽均使用下载文件；不拟合、不抽样。
 # 默认依次显示七张图。output_dir 非空时同时保存，formats 可用 pdf、png。
 # 多性别/分组结果各自输出七张图，不合并模型或观测。图内单位保留物理年份。
 input_path <- ""                     # 例如 "BLSD_archive_all_sexes.zip"
 output_dir <- NULL                   # 例如 "BLSD_redrawn_figures"
 formats <- c("pdf")                 # c("pdf", "png")；PNG 为 600 dpi
-section_years <- NULL                # NULL 使用归档默认值；或 c(1990, 2005, 2023)
-trend_ages <- NULL                   # NULL 使用归档默认值；或 c(32.5, 52.5, 72.5)
+section_years <- NULL                # NULL 优先使用稿件示例坐标，否则采用归档默认值
+trend_ages <- NULL                   # NULL 优先使用稿件六个年龄，否则采用归档默认值
 
 # 函数用法（脚本载入后）：
 # out <- blsd_plot_download("BLSD_archive_all_sexes.zip", show_plots = FALSE,
 #                          output_dir = "figures", formats = c("pdf", "png"))
 # out[[1]]$tables 保留用于绘图的数值；out[[1]]$plots 是七个 ggplot/grob。
+# 完整归档的现有诊断结果保留在 out[[1]]$metadata$diagnostics；Excel 不补算诊断。
 
 .blsd_need <- function(package) {
   if (!requireNamespace(package, quietly = TRUE))
@@ -40,6 +45,16 @@ trend_ages <- NULL                   # NULL 使用归档默认值；或 c(32.5, 
   if (!nrow(x) || any(!is.finite(x$year)) || any(!is.finite(x$age)))
     stop(context, " 的时期/年龄坐标为空或无效。", call. = FALSE)
   if (anyDuplicated(x[c("year", "age")])) stop(context, " 含重复的时期/年龄坐标。", call. = FALSE)
+}
+
+# Use an original age-group label only when it is unique for that midpoint.
+.blsd_age_labels <- function(ages, labels) {
+  valid <- is.finite(ages) & !is.na(labels) & nzchar(labels)
+  groups <- split(labels[valid], as.character(ages[valid]))
+  vapply(groups, function(x) {
+    x <- unique(x)
+    if (length(x) == 1L) x else ""
+  }, character(1))
 }
 
 .blsd_json_group <- function(result, source) {
@@ -70,12 +85,12 @@ trend_ages <- NULL                   # NULL 使用归档默认值；或 c(32.5, 
     d
   }), metrics)
   obs <- result$residuals
+  if (!length(obs) || !all(vapply(obs, function(x) "fittedRate" %in% names(x), logical(1))))
+    stop("残差表缺少保存的 fittedRate；请重新下载当前完整归档，不从预测网格替代计算。", call. = FALSE)
   observations <- data.frame(year = .blsd_numbers(obs, "year"), age = .blsd_numbers(obs, "age"),
     cohort = .blsd_numbers(obs, "cohort"), observed = .blsd_numbers(obs, "observedRate"),
-    residual = .blsd_numbers(obs, "devianceResidual"))
+    fitted = .blsd_numbers(obs, "fittedRate"), residual = .blsd_numbers(obs, "devianceResidual"))
   .blsd_check_coordinates(observations, "observations")
-  smooth <- result$cohortSmooth
-  cohort_smooth <- data.frame(cohort = .blsd_numbers(smooth, "cohort"), value = .blsd_numbers(smooth, "value"))
   contours <- lapply(c("surface", "annual"), function(metric) {
     lines <- result$contours[[metric]]
     if (!length(lines)) return(data.frame(year = numeric(), age = numeric(), level = numeric(), path = integer()))
@@ -87,17 +102,21 @@ trend_ages <- NULL                   # NULL 使用归档默认值；或 c(32.5, 
     }))
   })
   names(contours) <- c("surface", "annual")
+  age_labels <- .blsd_age_labels(.blsd_numbers(result$input, "Age_Mid"),
+    vapply(result$input, function(x) as.character(.blsd_value(x$Age_Group, "")), character(1)))
   sex <- result$meta$sex
   if (is.null(sex) && length(result$input)) sex <- result$input[[1]]$Sex
   list(label = .blsd_value(sex, "Unlabelled"), source = source, format = "json",
-       fields = fields, observations = observations, cohort_smooth = cohort_smooth,
+       fields = fields, observations = observations,
        contours = contours, defaults = .blsd_value(result$defaults, list()),
-       metadata = list(meta = result$meta, settings = result$settings, fitId = result$fitId))
+       metadata = list(meta = result$meta, settings = result$settings, fitId = result$fitId,
+                       diagnostics = result$diagnostics, age_labels = age_labels))
 }
 
 .blsd_headers <- function(d) {
   aliases <- list(
     sex = c("Sex", "性别"), year = c("Period", "Year", "时期", "年份"), age = c("Age", "年龄"),
+    age_group = c("Age group", "年龄组"),
     value = c("Estimate", "估计值"), lower = c("95% UI lower", "95% UI下限"),
     upper = c("95% UI upper", "95% UI上限"), status = c("Status", "状态"),
     reason = c("Screening reason", "屏蔽原因"), ln_rate = c("ln rate", "ln率"),
@@ -105,6 +124,7 @@ trend_ages <- NULL                   # NULL 使用归档默认值；或 c(32.5, 
     ln_upper = c("ln rate 95% UI upper", "ln率95% UI上限"),
     cohort = c("Approximate birth period", "Approximate birth year", "近似出生时期", "近似出生年份"),
     observed = c("Observed rate (per 100,000)", "观测率（每10万人）"),
+    fitted = c("Fitted rate (per 100,000)", "拟合率（每10万人）"),
     residual = c("Deviance residual", "偏差残差"))
   for (key in names(aliases)) {
     matches <- which(names(d) %in% aliases[[key]])
@@ -112,7 +132,7 @@ trend_ages <- NULL                   # NULL 使用归档默认值；或 c(32.5, 
     if (length(matches)) names(d)[matches] <- key
   }
   # readxl uses logical NA for a completely empty numeric column.
-  for (key in intersect(names(d), c("year", "age", "value", "lower", "upper", "ln_rate", "ln_lower", "ln_upper", "cohort", "observed", "residual"))) {
+  for (key in intersect(names(d), c("year", "age", "value", "lower", "upper", "ln_rate", "ln_lower", "ln_upper", "cohort", "observed", "fitted", "residual"))) {
     if (is.logical(d[[key]]) && all(is.na(d[[key]]))) d[[key]] <- as.numeric(d[[key]])
     if (!is.numeric(d[[key]])) stop("工作表数值列被改成文本：", key, call. = FALSE)
   }
@@ -152,11 +172,19 @@ trend_ages <- NULL                   # NULL 使用归档默认值；或 c(32.5, 
   surface[surface$masked, c("value", "lower", "upper")] <- NA_real_
   fields$surface <- surface
   observations <- tables$observations
-  .blsd_required(observations, c("cohort", "observed", "residual"), "观测与残差")
-  message("Excel 未保存等高线顶点、残差平滑线和默认曲线选择；省略缺失图层，自动选择现有观测坐标。完整分析归档保留这些信息。")
+  .blsd_required(observations, c("fitted", "observed", "residual"),
+                 "观测与残差；旧表若缺少拟合率，请重新下载当前结果表格")
+  age_labels <- character()
+  input_sheet <- intersect(sheets, c("Input data", "输入数据"))
+  if (length(input_sheet) == 1L) {
+    input <- .blsd_headers(as.data.frame(readxl::read_excel(path, sheet = input_sheet, .name_repair = "minimal")))
+    if (all(c("age", "age_group") %in% names(input)))
+      age_labels <- .blsd_age_labels(input$age, as.character(input$age_group))
+  }
+  message("Excel 未保存等高线顶点和默认曲线选择；省略等高线，从现有坐标选取曲线。完整分析归档保留原始等高线和诊断结果。")
   list(label = if (length(sex)) sex[[1]] else "Unlabelled", source = source, format = "xlsx",
-       fields = fields, observations = observations, cohort_smooth = data.frame(),
-       contours = list(), defaults = list(), metadata = list())
+       fields = fields, observations = observations,
+       contours = list(), defaults = list(), metadata = list(age_labels = age_labels))
 }
 
 # ZIP 中只读取结果 JSON 或 XLSX。XLSX 复制到新临时文件，忽略归档路径；
@@ -239,8 +267,7 @@ blsd_read_download <- function(path) {
     x <- sort(unique(x)); n <- length(x)
     if (n < 2L) return(data.frame(x = x, low = x - 0.5, high = x + 0.5))
     middle <- (head(x, -1L) + tail(x, -1L)) / 2
-    data.frame(x = x, low = c(x[1] - (x[2] - x[1]) / 2, middle),
-               high = c(middle, x[n] + (x[n] - x[n - 1L]) / 2))
+    data.frame(x = x, low = c(x[1], middle), high = c(middle, x[n]))
   }
   y <- edges(d$year); a <- edges(d$age)
   d$xmin <- y$low[match(d$year, y$x)]; d$xmax <- y$high[match(d$year, y$x)]
@@ -249,6 +276,8 @@ blsd_read_download <- function(path) {
 }
 
 .blsd_heatmap <- function(d, metric, contours = NULL) {
+  # Determine cell edges before excluding endpoint curvature, retaining their interior half-edges.
+  d <- .blsd_cells(d)
   if (metric == "acceleration") {
     # Drop only entire period columns explicitly screened as spline boundaries.
     boundary <- d$reason %in% c("NATURAL_SPLINE_BOUNDARY", "Period boundary", "Year boundary", "时期边界", "年份边界")
@@ -256,19 +285,20 @@ blsd_read_download <- function(path) {
     d <- d[!d$year %in% as.numeric(names(omit)[omit]), , drop = FALSE]
   }
   if (!nrow(d)) stop("指标没有可绘制的坐标：", metric, call. = FALSE)
-  p <- ggplot2::ggplot(.blsd_cells(d)) +
+  p <- ggplot2::ggplot(d) +
     ggplot2::geom_rect(ggplot2::aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = value)) +
     ggplot2::coord_cartesian(expand = FALSE) + ggplot2::labs(x = "Period", y = "Age (years)")
-  labels <- c(surface = "ln(rate per 100,000)", annual = "% / year", acceleration = "Log-rate / year^2",
+  labels <- c(surface = "ln(rate per 100,000)", annual = "% / year", acceleration = "Log-rate curvature / year^2",
               gradient = "% / age-year", shift = "Age-years / year")
   if (metric == "surface") p <- p + ggplot2::scale_fill_viridis_c(name = labels[[metric]], na.value = "grey90")
   else if (metric == "gradient") p <- p + ggplot2::scale_fill_gradientn(colours = c("#346D8C", "#F7F5F0", "#CE8D5E"), name = labels[[metric]], na.value = "grey90")
-  else {
+  else if (metric == "shift") {
     limit <- max(c(abs(d$value[is.finite(d$value)]), 0))
     if (limit == 0) limit <- 1
     p <- p + ggplot2::scale_fill_gradient2(low = "#346D8C", mid = "#F7F5F0", high = "#CE8D5E",
       midpoint = 0, limits = c(-limit, limit), name = labels[[metric]], na.value = "grey90")
-  }
+  } else p <- p + ggplot2::scale_fill_gradient2(low = "#2166AC", mid = "#FFFFFF", high = "#B2182B",
+      midpoint = 0, name = labels[[metric]], na.value = "grey90")
   if (!is.null(contours) && nrow(contours)) p <- p +
     ggplot2::geom_path(data = contours, ggplot2::aes(x = year, y = age, group = path),
       inherit.aes = FALSE, colour = if (metric == "surface") "white" else "#424242", linewidth = 0.3)
@@ -277,21 +307,32 @@ blsd_read_download <- function(path) {
 
 .blsd_group_plots <- function(group, section_years, trend_ages) {
   fields <- group$fields; obs <- group$observations; rate <- fields$rate
-  years <- .blsd_choose(section_years, group$defaults$sectionYears, obs$year, rate$year, 3, "section_years")
-  ages <- .blsd_choose(trend_ages, group$defaults$trendAges, obs$age, rate$age, 6, "trend_ages")
-  theme <- ggplot2::theme_classic(base_size = 10) +
+  default_years <- group$defaults$sectionYears; default_ages <- group$defaults$trendAges
+  manuscript_ages <- c(32.5, 42.5, 52.5, 62.5, 82.5, 92.5)
+  if (all(range(obs$year) == c(1990, 2023)) && all(c(1990, 2005, 2023) %in% rate$year))
+    default_years <- c(1990, 2005, 2023)
+  if (all(manuscript_ages %in% obs$age) && all(manuscript_ages %in% rate$age))
+    default_ages <- manuscript_ages
+  years <- .blsd_choose(section_years, default_years, obs$year, rate$year, 3, "section_years")
+  ages <- .blsd_choose(trend_ages, default_ages, obs$age, rate$age, 6, "trend_ages")
+  theme <- ggplot2::theme_minimal(base_size = 11) +
     ggplot2::theme(legend.position = "bottom", legend.key.width = grid::unit(1, "cm"),
-      axis.line = ggplot2::element_line(linewidth = 0.3), plot.margin = ggplot2::margin(5, 6, 5, 5))
+      panel.grid.major = ggplot2::element_line(colour = "#e7e8eb"),
+      panel.grid.minor = ggplot2::element_line(colour = "#eeeeee"),
+      axis.line = ggplot2::element_blank(), plot.margin = ggplot2::margin(5, 6, 5, 5))
   p1 <- .blsd_heatmap(fields$surface, "surface", group$contours$surface) + theme
   p2 <- .blsd_heatmap(fields$annual, "annual", group$contours$annual) + theme
   p3 <- .blsd_heatmap(fields$acceleration, "acceleration") + theme
-  p4 <- ggplot2::ggplot(obs, ggplot2::aes(cohort, residual)) +
-    ggplot2::geom_hline(yintercept = 0, colour = "grey60", linetype = "dashed", linewidth = 0.3) +
-    ggplot2::geom_point(ggplot2::aes(colour = age), size = 1.1, alpha = 0.6, na.rm = TRUE) +
+  # Figure 3D: the original fitted rate at each observation, never observed rate or grid matching.
+  residual_rows <- is.finite(obs$fitted) & obs$fitted > 0 & is.finite(obs$residual)
+  if (!any(residual_rows)) stop("没有可用于对数横轴残差图的正拟合率。", call. = FALSE)
+  if (any(!residual_rows)) message(sum(!residual_rows), " 个非有限残差或非正拟合率保留在数值表中，未在残差图中绘制。")
+  p4 <- ggplot2::ggplot(obs[residual_rows, , drop = FALSE], ggplot2::aes(fitted, residual)) +
+    ggplot2::geom_hline(yintercept = 0, colour = "#000000", linetype = "dashed", linewidth = 0.28) +
+    ggplot2::geom_point(ggplot2::aes(colour = age), size = 1.15, alpha = 0.5, stroke = 0) +
     ggplot2::scale_colour_viridis_c(name = "Age (years)") +
-    ggplot2::labs(x = "Approximate birth period", y = "Deviance residual") + theme
-  if (nrow(group$cohort_smooth)) p4 <- p4 + ggplot2::geom_line(data = group$cohort_smooth,
-    ggplot2::aes(cohort, value), inherit.aes = FALSE, colour = "#303030", linewidth = 0.5)
+    ggplot2::scale_x_log10(labels = scales::label_number(big.mark = "")) +
+    ggplot2::labs(x = "Fitted rate per 100,000", y = "Deviance residual") + theme
   sections <- rate[rate$year %in% years, ]; sections$period <- factor(sections$year, levels = years)
   observed_sections <- obs[obs$year %in% years & is.finite(obs$observed) & obs$observed > 0, ]
   observed_sections$period <- factor(observed_sections$year, levels = years)
@@ -302,17 +343,33 @@ blsd_read_download <- function(path) {
     ggplot2::scale_y_log10() + ggplot2::labs(x = "Age (years)", y = "Rate per 100,000", colour = "Period", fill = "Period") + theme
   trends <- rate[rate$age %in% ages, ]; trends$age_label <- factor(trends$age, levels = ages)
   observed_trends <- obs[obs$age %in% ages, ]; observed_trends$age_label <- factor(observed_trends$age, levels = ages)
+  trend_labels <- setNames(as.character(ages), as.character(ages))
+  saved_labels <- group$metadata$age_labels
+  available_labels <- intersect(names(trend_labels), names(saved_labels))
+  available_labels <- available_labels[nzchar(saved_labels[available_labels])]
+  trend_labels[available_labels] <- saved_labels[available_labels]
   p6 <- ggplot2::ggplot(trends, ggplot2::aes(year, value)) +
-    ggplot2::geom_ribbon(ggplot2::aes(ymin = lower, ymax = upper), fill = "#77A9BF", alpha = 0.3, na.rm = TRUE) +
-    ggplot2::geom_line(colour = "#346D8C", linewidth = 0.6, na.rm = TRUE) +
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = lower, ymax = upper), fill = "#2C7FB8", alpha = 0.2, na.rm = TRUE) +
+    ggplot2::geom_line(colour = "#2166AC", linewidth = 0.6, na.rm = TRUE) +
     ggplot2::geom_point(data = observed_trends, ggplot2::aes(y = observed), size = 1, na.rm = TRUE) +
-    ggplot2::facet_wrap(~age_label, scales = "free_y", ncol = 3) +
+    ggplot2::facet_wrap(~age_label, scales = "free_y", ncol = 3,
+      labeller = ggplot2::labeller(age_label = trend_labels)) +
     ggplot2::labs(x = "Period", y = "Rate per 100,000") + theme
   p7a <- .blsd_heatmap(fields$gradient, "gradient") + theme
   p7b <- .blsd_heatmap(fields$shift, "shift") + theme
-  p7 <- gridExtra::arrangeGrob(p7a, p7b, ncol = 2)
+  # Build the combined panel off-screen so Source opens no leading blank page.
+  p7 <- (function() {
+    previous <- grDevices::dev.cur()
+    grDevices::pdf(file = NULL)
+    device <- grDevices::dev.cur()
+    on.exit({
+      grDevices::dev.off(device)
+      if (previous > 1L && previous %in% grDevices::dev.list()) grDevices::dev.set(previous)
+    }, add = TRUE)
+    gridExtra::arrangeGrob(p7a, p7b, ncol = 2)
+  })()
   list(plots = list(p1, p2, p3, p4, p5, p6, p7),
-       tables = list(fields = fields, observations = obs, cohort_smooth = group$cohort_smooth, contours = group$contours),
+       tables = list(fields = fields, observations = obs, contours = group$contours),
        section_years = years, trend_ages = ages, metadata = group$metadata,
        label = group$label, source = group$source)
 }
@@ -323,7 +380,7 @@ blsd_plot_download <- function(path, output_dir = NULL, formats = c("pdf"),
   if (!length(formats) || any(!formats %in% c("pdf", "png"))) stop("formats 仅支持 pdf、png。", call. = FALSE)
   groups <- blsd_read_download(path)
   results <- vector("list", length(groups))
-  figure_names <- c("fitted_surface", "annual_change", "acceleration", "cohort_residuals",
+  figure_names <- c("fitted_surface", "annual_change", "acceleration", "fitted_rate_residuals",
                     "age_sections", "age_specific_trends", "age_gradient_and_equal_rate_shift")
   for (i in seq_along(groups)) {
     group <- groups[[i]]

@@ -9,11 +9,14 @@
 # 负二项 + GCV 会明确报错，不会静默改用 REML 或 UBRE。
 # 输入列：Year、Age_Group（或 Age_Mid）、Count（或 Deaths）、Pop；
 # 可选 Sex 列。多个性别分别拟合，绝不混合；30-34 的年龄中点为 32.5。
-# 七张图依次为曲面、年度变化、加速度、队列残差、年龄截面、
+# 七张图依次为曲面、年度变化、加速度、拟合率与偏差残差、年龄截面、
 # 年龄别时期趋势，以及年龄梯度和等死亡率年龄移动速度并列图。
 # 默认在 Plots 中显示；设置 output_dir = "BLSD_figures" 可保存 PDF/PNG。
 # 仅加载函数：options(blsd.skip_autorun = TRUE)，再 source 此文件。
-# 运行后 blsd_result 保留每组模型、同一套系数抽样、数值表及绘图对象。
+# 运行后 blsd_result 保留每组模型、同一套系数抽样、数值表、诊断及绘图对象。
+# 每组自动报告基维度检查：k-index、近似 P 值及 EDF；400 次置换使用独立随机流。
+# 稿件符号：g_t 为时间斜率，g_a 为年龄斜率，c_t 为时间曲率；
+# A_t=100*expm1(g_t)，A_a=100*expm1(g_a)，v=-g_t/g_a 为等率年龄移动。
 #
 # BLSD Tool: selectable count/exposure analysis and seven figures.
 # Requires R >= 4.1 and: install.packages(c("mgcv", "ggplot2", "gridExtra"))
@@ -30,7 +33,7 @@
 # https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/negbin.html
 # https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/gam.html
 #
-# Seven figures: surface, annual change, acceleration, cohort residuals,
+# Seven figures: surface, annual change, log-rate curvature, fitted-rate residuals,
 # age profiles, period trends, and a two-panel age-gradient / age-shift figure.
 # Intervals are approximate 95% pointwise intervals, not predictive intervals.
 # To load functions only: options(blsd.skip_autorun = TRUE); source(this_file)
@@ -56,6 +59,13 @@ blsd_config <- list(
 # INDEPENDENT_SYNTHETIC_COUNT_EXPOSURE; simulated=TRUE; derived=FALSE.
 # Generation seed=20261022; BLSD-INDEPENDENT-SYNTHETIC-20261022-v1.
 # The generating NB size=300 is NOT a known fitted theta.
+# Fixed manuscript data-generating mechanism (documentation only; never sampled here):
+# x=(a-62.5)/30, u=(t-2005)/15;
+# r(a,t)=(250/100000)*exp(3.2*x - 0.9*x^2 - (0.55-0.12*x)*u + 0.08*u^3).
+# P(a)=round(2000000*exp(-0.03*(a-32.5))).
+# Y(a,t) ~ NB(mu=P(a)*r(a,t), size=300), Var(Y)=mu+mu^2/300.
+# The 442 fixed observations below are the original single realization.
+# Analysis treats denominators as fixed and cells as conditionally independent.
 blsd_example_csv <- '"Year","Age_Group","Count","Pop"
 1990,"30-34",134,2e+06
 1990,"35-39",276,1721416
@@ -606,6 +616,53 @@ blsd_choose <- function(axis, requested, count) {
   sort(unique(requested))
 }
 
+# Basis diagnostics use only the retained fit and their own reproducible RNG stream.
+# Restoring both RNGkind and .Random.seed keeps model/interval draws unchanged.
+blsd_basis_diagnostics <- function(model, seed = 20261015L, replicates = 400L, subsample = 5000L) {
+  rng_kind <- RNGkind()
+  had_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  if (had_seed) saved_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  on.exit({
+    do.call(RNGkind, as.list(rng_kind))
+    if (had_seed) assign(".Random.seed", saved_seed, envir = .GlobalEnv)
+    else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) rm(".Random.seed", envir = .GlobalEnv)
+  }, add = TRUE)
+  RNGkind("Mersenne-Twister", "Inversion", "Rejection")
+  set.seed(seed)
+  warnings <- character()
+  error_message <- NULL
+  check <- tryCatch(withCallingHandlers(
+    mgcv::k.check(model, subsample = subsample, n.rep = replicates),
+    warning = function(w) { warnings <<- c(warnings, conditionMessage(w)); invokeRestart("muffleWarning") }),
+    error = function(e) { error_message <<- conditionMessage(e); NULL })
+  terms <- vapply(model$smooth, function(x) x$label, character(1))
+  if (!length(terms) && is.null(error_message)) error_message <- "No smooth terms are available for a basis-dimension check."
+  checks <- data.frame(term = terms, k_prime = rep(NA_real_, length(terms)),
+    edf = rep(NA_real_, length(terms)), k_index = rep(NA_real_, length(terms)),
+    p_value = rep(NA_real_, length(terms)), status = rep("UNAVAILABLE", length(terms)), reason = rep("", length(terms)),
+    stringsAsFactors = FALSE)
+  for (i in seq_along(terms)) {
+    row <- if (is.null(check)) NA_integer_ else match(terms[i], rownames(check))
+    if (!is.na(row)) {
+      columns <- c("k'", "edf", "k-index", "p-value")
+      values <- vapply(columns, function(column) {
+        if (!column %in% colnames(check)) return(NA_real_)
+        value <- as.numeric(check[row, column])
+        if (length(value) != 1L || !is.finite(value)) NA_real_ else value
+      }, numeric(1))
+      checks[i, c("k_prime", "edf", "k_index", "p_value")] <- values
+      checks$status[i] <- if (all(is.finite(values))) "AVAILABLE" else "UNAVAILABLE"
+    }
+    if (checks$status[i] != "AVAILABLE") checks$reason[i] <- if (!is.null(error_message)) error_message else
+      "mgcv::k.check did not return a finite k-index and P value for this smooth."
+  }
+  status <- if (!length(terms) || all(checks$status == "UNAVAILABLE")) "UNAVAILABLE" else
+    if (all(checks$status == "AVAILABLE")) "AVAILABLE" else "PARTIAL"
+  list(basis_checks = checks, basis_check_status = status, seed = seed, replicates = replicates,
+    subsample = subsample, warnings = unique(warnings), error = error_message,
+    note = "Interpret the k-index and permutation P value with EDF and fits using larger basis dimensions; small P is not a definitive test of basis adequacy.")
+}
+
 blsd_fit_one <- function(data, config, sex = NULL) {
   if (anyDuplicated(data[c("Year", "Age_Mid")])) stop("Duplicate age-period cells within a group.")
   observed_years <- sort(unique(data$Year))
@@ -653,6 +710,9 @@ blsd_fit_one <- function(data, config, sex = NULL) {
   grid$Pop <- 1
   h_age <- min(0.01, diff(range(ages)) / 10)
   h_period <- min(0.01, diff(range(years)) / 10)
+  # Manuscript notation: eta=log(rate), g_t=d(eta)/dt, g_a=d(eta)/da,
+  # c_t=d^2(eta)/dt^2, A_t=100*expm1(g_t), A_a=100*expm1(g_a), v=-g_t/g_a.
+  # Legacy machine fields logAnnual/logGradient/acceleration/shift retain these meanings.
   metrics <- c("surface", "rate", "annual", "acceleration", "gradient", "shift", "logGradient", "logAnnual")
   fields <- setNames(lapply(metrics, function(x) data.frame(grid[c("Year", "Age_Mid")], Value = NA_real_, Lower = NA_real_, Upper = NA_real_,
     RawValue = NA_real_, RawLower = NA_real_, RawUpper = NA_real_, Masked = FALSE, MaskReason = "", ValidFraction = NA_real_)), metrics)
@@ -699,12 +759,25 @@ blsd_fit_one <- function(data, config, sex = NULL) {
   }
   observations <- data
   observations$ObservedRate <- data$Deaths / data$Pop * 100000
+  # Keep the historical cohort coordinate in retained tables, while Figure 4 uses
+  # the manuscript's fitted-rate diagnostic on a log horizontal axis.
   observations$Cohort <- data$Year - data$Age_Mid
+  observed_grid <- data.frame(Year = data$Year, Age_Mid = data$Age_Mid, Pop = 1)
+  observations$FittedRate <- NA_real_
+  for (first in seq(1L, nrow(data), by = 128L)) {
+    ix <- first:min(nrow(data), first + 127L)
+    X_observed <- stats::predict(model, newdata = observed_grid[ix, , drop = FALSE], type = "lpmatrix")
+    observations$FittedRate[ix] <- exp(drop(X_observed %*% beta) + log(100000))
+  }
+  if (any(!is.finite(observations$FittedRate) | observations$FittedRate <= 0))
+    stop("Fitted rates are non-finite or nonpositive; the log-scale residual diagnostic cannot be displayed.")
   observations$Residual <- stats::residuals(model, type = "deviance")
   theta <- if (config$distribution == "nb") {
     model$family$getTheta(TRUE)
   } else NULL
+  diagnostics <- blsd_basis_diagnostics(model)
   list(input = data, observations = observations, model = model, coefficient_draws = beta_draws, fields = fields,
+    diagnostics = diagnostics,
     section_years = section_years, trend_ages = trend_ages,
     metadata = list(sex = sex, distribution = config$distribution, smoothing_requested = config$smoothing,
       smoothing_actual = model$method, theta = theta,
@@ -713,13 +786,15 @@ blsd_fit_one <- function(data, config, sex = NULL) {
       covariance = covariance_source, seed = config$seed, draws = config$draws, k_age = k_age, k_period = k_period,
       gradient_threshold = config$gradient_threshold, h_age = h_age, h_period = h_period,
       point_estimate = "FITTED_COEFFICIENT_PLUGIN", interval = "APPROXIMATE_95_PERCENT_POINTWISE",
+      manuscript_symbols = c(logAnnual = "g_t", logGradient = "g_a", acceleration = "c_t", annual = "A_t", gradient = "A_a", shift = "v"),
+      residual_diagnostic = "COUNT_DEVIANCE_RESIDUALS_VS_FITTED_RATE_LOG10",
       R_version = R.version.string, mgcv_version = as.character(utils::packageVersion("mgcv"))))
 }
 
 blsd_tile_bounds <- function(frame) {
   edges <- function(x) {
     x <- sort(unique(x)); m <- (head(x, -1L) + tail(x, -1L)) / 2
-    c(x[1] - (m[1] - x[1]), m, tail(x, 1) + (tail(x, 1) - tail(m, 1)))
+    c(x[1], m, tail(x, 1))
   }
   years <- sort(unique(frame$Year)); ages <- sort(unique(frame$Age_Mid))
   ye <- edges(years); ae <- edges(ages)
@@ -730,7 +805,9 @@ blsd_tile_bounds <- function(frame) {
 blsd_make_plots <- function(result) {
   # Only retained tables are used below: no fit, prediction or random draws.
   gg <- asNamespace("ggplot2")
-  theme <- gg$theme_classic(base_size = 11) + gg$theme(legend.position = "right", panel.grid = gg$element_blank())
+  theme <- gg$theme_minimal(base_size = 11) + gg$theme(legend.position = "right",
+    panel.grid.major = gg$element_line(colour = "#e7e8eb"),
+    panel.grid.minor = gg$element_line(colour = "#eeeeee"), axis.line = gg$element_blank())
   field <- function(metric, legend, kind = "diverging") {
     frame <- blsd_tile_bounds(result$fields[[metric]])
     if (metric == "acceleration") frame <- frame[frame$MaskReason != "NATURAL_SPLINE_BOUNDARY", ]
@@ -739,12 +816,13 @@ blsd_make_plots <- function(result) {
       gg$coord_cartesian(expand = FALSE) + gg$labs(x = "Period", y = "Age (years)", fill = legend) + theme
     if (kind == "surface") p <- p + gg$scale_fill_viridis_c(name = legend, na.value = "grey90")
     else if (kind == "sequential") p <- p + gg$scale_fill_gradientn(colours = c("#346D8C", "#F7F5F0", "#CE8D5E"), name = legend, na.value = "grey90")
-    else {
+    else if (metric == "shift") {
       finite <- abs(frame$Value[is.finite(frame$Value)])
       limit <- if (length(finite) && max(finite) > 0) max(finite) else 1
       p <- p + gg$scale_fill_gradient2(low = "#346D8C", mid = "#F7F5F0", high = "#CE8D5E", midpoint = 0,
         limits = c(-limit, limit), name = legend, na.value = "grey90")
-    }
+    } else p <- p + gg$scale_fill_gradient2(low = "#2166AC", mid = "#FFFFFF", high = "#B2182B",
+      midpoint = 0, name = legend, na.value = "grey90")
     p
   }
   # contourLines uses the actual nonuniform coordinates (the prediction grid
@@ -769,12 +847,14 @@ blsd_make_plots <- function(result) {
     gg$geom_path(data = contour_table("surface", 12L), gg$aes(Year, Age_Mid, group = Path), inherit.aes = FALSE, colour = "white", linewidth = 0.3)
   p2 <- field("annual", "% / year") +
     gg$geom_path(data = contour_table("annual", 10L), gg$aes(Year, Age_Mid, group = Path), inherit.aes = FALSE, colour = "grey30", linewidth = 0.3)
-  p3 <- field("acceleration", "Log-rate / year^2")
+  p3 <- field("acceleration", "Log-rate curvature / year^2")
   obs <- result$observations
-  p4 <- gg$ggplot(obs, gg$aes(Cohort, Residual)) + gg$geom_point(gg$aes(colour = Age_Mid), alpha = 0.6, size = 1.1) +
-    gg$geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.3) +
-    gg$geom_smooth(method = "loess", formula = y ~ x, se = FALSE, colour = "grey25", linewidth = 0.5) +
-    gg$scale_colour_viridis_c(name = "Age (years)") + gg$labs(x = "Approximate birth year", y = "Deviance residual") + theme
+  p4 <- gg$ggplot(obs, gg$aes(FittedRate, Residual)) +
+    gg$geom_hline(yintercept = 0, colour = "#000000", linetype = "dashed", linewidth = 0.28) +
+    gg$geom_point(gg$aes(colour = Age_Mid), alpha = 0.5, size = 1.15, stroke = 0) +
+    gg$scale_colour_viridis_c(name = "Age (years)") +
+    gg$scale_x_log10(labels = scales::label_number(big.mark = "")) +
+    gg$labs(x = "Fitted rate per 100,000", y = "Deviance residual") + theme
   rates <- result$fields$rate
   profiles <- rates[rates$Year %in% result$section_years, ]
   profiles$Period <- factor(profiles$Year, levels = result$section_years)
@@ -786,15 +866,32 @@ blsd_make_plots <- function(result) {
     gg$labs(x = "Age (years)", y = "Rate per 100,000") + theme
   trends <- rates[rates$Age_Mid %in% result$trend_ages, ]
   observed_trends <- obs[obs$Age_Mid %in% result$trend_ages, ]
+  trend_labels <- setNames(as.character(result$trend_ages), as.character(result$trend_ages))
+  if ("Age_Group" %in% names(obs)) for (age in result$trend_ages) {
+    labels <- unique(as.character(obs$Age_Group[obs$Age_Mid == age]))
+    labels <- labels[!is.na(labels) & nzchar(trimws(labels))]
+    if (length(labels) == 1L) trend_labels[as.character(age)] <- labels
+  }
   p6 <- gg$ggplot(trends, gg$aes(Year, Value)) +
     gg$geom_ribbon(gg$aes(ymin = Lower, ymax = Upper), alpha = 0.2, fill = "#2C7FB8") +
     gg$geom_line(colour = "#2166AC", linewidth = 0.6) +
     gg$geom_point(data = observed_trends, gg$aes(y = ObservedRate), size = 1) +
-    gg$facet_wrap(~Age_Mid, scales = "free_y", ncol = 3) + gg$labs(x = "Period", y = "Rate per 100,000") + theme
+    gg$facet_wrap(~Age_Mid, scales = "free_y", ncol = 3, labeller = gg$as_labeller(trend_labels)) + gg$labs(x = "Period", y = "Rate per 100,000") + theme
   p7a <- field("gradient", "% / age-year", "sequential") + gg$theme(legend.position = "bottom")
   p7b <- field("shift", "Age-years / year") + gg$theme(legend.position = "bottom")
-  p7 <- gridExtra::arrangeGrob(p7a, p7b, ncol = 2)
-  setNames(list(p1, p2, p3, p4, p5, p6, p7), c("surface", "annual_change", "acceleration", "cohort_residuals", "age_profiles", "period_trends", "gradient_and_shift"))
+  # Build the combined panel off-screen so Source opens no leading blank page.
+  p7 <- (function() {
+    previous_device <- grDevices::dev.cur()
+    grDevices::pdf(file = NULL)
+    device <- grDevices::dev.cur()
+    on.exit({
+      grDevices::dev.off(device)
+      if (previous_device > 1L && previous_device %in% grDevices::dev.list())
+        grDevices::dev.set(previous_device)
+    }, add = TRUE)
+    gridExtra::arrangeGrob(p7a, p7b, ncol = 2)
+  })()
+  setNames(list(p1, p2, p3, p4, p5, p6, p7), c("surface", "annual_change", "acceleration", "fitted_rate_residuals", "age_profiles", "period_trends", "gradient_and_shift"))
 }
 
 blsd_run <- function(config = blsd_config, data = NULL) {
@@ -825,6 +922,11 @@ blsd_run <- function(config = blsd_config, data = NULL) {
     group_data <- if (is.null(sex)) data else data[data$Sex == sex, , drop = FALSE]
     message("Fitting ", config$distribution, " + ", config$smoothing, if (!is.null(sex)) paste0(" [", sex, "]") else "")
     result <- blsd_fit_one(group_data, config, sex)
+    message("Basis-dimension diagnostic: ", result$diagnostics$basis_check_status,
+      " (", result$diagnostics$replicates, " permutations; independent seed ", result$diagnostics$seed, ")")
+    print(result$diagnostics$basis_checks, row.names = FALSE)
+    if (!is.null(result$diagnostics$error)) message("Basis check unavailable: ", result$diagnostics$error)
+    if (length(result$diagnostics$warnings)) message(paste(result$diagnostics$warnings, collapse = "\n"))
     result$plots <- blsd_make_plots(result)
     if (config$display) for (plot in result$plots) {
       if (inherits(plot, "ggplot")) print(plot) else { grid::grid.newpage(); grid::grid.draw(plot) }
