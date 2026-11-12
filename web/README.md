@@ -42,7 +42,7 @@ node deployment/check-environment.mjs
 corepack pnpm start
 ```
 
-The production server listens on <http://127.0.0.1:4174> by default. Set `PORT` to change its port. `corepack pnpm start` runs `node server/index.mjs`.
+The production build writes the browser assets to `dist/client/`. The Node/R application is started with `node server/index.mjs` (or `corepack pnpm start`) and listens on <http://127.0.0.1:4174> by default. Set `PORT` to change its port.
 
 The environment check should be run after the build. The test suite can be invoked with `corepack pnpm test`; R-dependent integration checks require a working R installation.
 

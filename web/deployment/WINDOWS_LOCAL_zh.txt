@@ -5,7 +5,7 @@ BLSD Tool：Windows 本地启动
   http://127.0.0.1:4175/
 
 该入口使用运行设备已有的程序和包内预编译网页，不需要管理员权限，不会自动安装软件。
-首次使用需按 DEPLOYMENT_zh.txt 准备 Node.js、R 与所需 R 包。
+首次使用需按上一级目录 README.md 的 Requirements 与 Run locally 部分准备 Node.js、R、所需 R 包及前端依赖。
 保持解压后的 blsd-studio 目录完整，启动/停止 CMD 与 deployment 子目录相对位置保持不变。
 
 网页已经可用时直接打开原网页，不重复启动、不接管原服务。

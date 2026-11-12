@@ -136,7 +136,7 @@ def main():
         'testedEnvironment': {'Node': '24.19.0', 'R': '4.4.3', 'mgcv': '1.9.1',
             'jsonlite': '2.0.0', 'scales': '1.4.0', 'ggplot2': '4.0.0', 'platform': 'Windows x64'},
         'excluded': ['node_modules', 'Node/R installations', 'frontend development sources',
-            'tests and QA', 'Sites adapters', 'build tools and lockfiles', 'original research data',
+            'tests and QA', 'build tools and lockfiles', 'original research data',
             'unused public demo/simulation copies', 'fit/job caches', 'launcher identities',
             'logs and screenshots', 'user result files', 'PDF user guide', 'Windows launchers'],
         'files': entries,

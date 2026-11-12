@@ -26,7 +26,6 @@ function Find-Node {
     else {
         $command = Get-Command node.exe -ErrorAction SilentlyContinue
         if ($command) { $candidates += $command.Source }
-        $candidates += (Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe')
         if ($env:ProgramFiles) { $candidates += (Join-Path $env:ProgramFiles 'nodejs\node.exe') }
         if (${env:ProgramFiles(x86)}) { $candidates += (Join-Path ${env:ProgramFiles(x86)} 'nodejs\node.exe') }
     }
@@ -220,8 +219,6 @@ try {
         Write-Host 'Building the website...'
         & $nodeExecutable $vite build --configLoader native
         if ($LASTEXITCODE -ne 0) { throw 'Website build failed.' }
-        & $nodeExecutable (Join-Path $projectRoot 'scripts\prepare-sites-build.mjs')
-        if ($LASTEXITCODE -ne 0) { throw 'Build preparation failed.' }
     }
     Write-Host "Node: $nodeExecutable"
     Write-Host "R:    $rExecutable"

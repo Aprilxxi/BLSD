@@ -26,7 +26,6 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    allowedHosts: ["terminal.local"],
     watch: { ignored: ["**/qa/**", "**/dist/**", "**/server/.jobs/**"] },
     warmup: {
       clientFiles: ["./src/main.jsx"],
