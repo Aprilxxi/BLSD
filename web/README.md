@@ -1,5 +1,7 @@
 # BLSD Tool
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 **BLSD Tool** is the web interface for **BLSD (Bayesian Lexis Surface Dynamics)**, a model for estimating and examining smooth age–period rate surfaces. It combines a React interface, interactive ECharts graphics, and an R backend using `mgcv`. The interface is available in English and Chinese.
 
 This directory contains the application's source code, published under `web/` in the [Aprilxxi/BLSD repository](https://github.com/Aprilxxi/BLSD).
