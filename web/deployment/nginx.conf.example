@@ -1,0 +1,27 @@
+# BLSD Tool: same-host reverse proxy template.
+# Replace the domain and port before installation. Serve at the website root.
+# Add your server's normal TLS certificate configuration for HTTPS.
+server {
+    listen 80;
+    server_name analysis.example.org;
+
+    client_max_body_size 10m;
+
+    location / {
+        proxy_pass http://127.0.0.1:4174;
+        proxy_http_version 1.1;
+
+        # Preserve the browser-visible Host, including a non-default port.
+        # The API compares this value with the request's Origin host.
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 10s;
+        # The web client uses asynchronous jobs and polling. Legacy synchronous
+        # API requests must finish within the proxy timeout.
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+}

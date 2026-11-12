@@ -1,0 +1,40 @@
+BLSD Tool：Windows 本地启动
+
+将运行包完整解压，进入 blsd-studio 文件夹，双击 start-windows.cmd。
+脚本自动检测已安装的 Node.js、R、四个 R 包及 Cairo/TIFF，启动后打开默认浏览器：
+  http://127.0.0.1:4175/
+
+该入口使用运行设备已有的程序和包内预编译网页，不需要管理员权限，不会自动安装软件。
+首次使用需按 DEPLOYMENT_zh.txt 准备 Node.js、R 与所需 R 包。
+保持解压后的 blsd-studio 目录完整，启动/停止 CMD 与 deployment 子目录相对位置保持不变。
+
+网页已经可用时直接打开原网页，不重复启动、不接管原服务。
+新启动的服务在后台运行，关闭脚本窗口或浏览器不会结束分析服务。
+要停止本脚本启动的服务，双击同一目录中的 stop-windows.cmd。
+启动器先发送本地秘密令牌验证的退出请求，最多等待 30 秒；仍未结束时，逐个验证创建时间、
+程序路径和命令行后停止所属进程树，包括 R 子进程。旧版服务记录使用身份核验后的停止方式。
+停止会使该服务尚未下载的临时分析结果失效，请先下载结果。
+未由本脚本启动的旧服务不在停止脚本的管理范围内。
+
+日志与进程记录：
+  server\.launcher\windows-4175.log
+  server\.launcher\windows-4175-error.log
+  server\.launcher\windows-4175.json
+
+若 4175 被其他程序占用或原服务不健康，脚本会提示，不会强行结束其他程序。
+可在项目目录的 PowerShell 中改用其他端口：
+  .\start-windows.cmd -Port 4185
+  .\stop-windows.cmd -Port 4185
+
+其他可选操作（从项目目录执行）：
+  .\start-windows.cmd -CheckOnly -NoBrowser   仅检查运行环境
+  .\start-windows.cmd -NoBrowser              启动但不自动打开浏览器
+  .\start-windows.cmd -Rebuild                重新构建网页后启动，需要前端依赖已安装
+
+直接调用 PowerShell 版本时可显式指定程序路径：
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-windows.ps1 -NodePath "C:\路径\node.exe" -Rscript "D:\路径\Rscript.exe"
+
+脚本只监听本机 127.0.0.1。让其他人通过域名访问请使用单独的 Linux 部署包。
+本地启动工具不设置开机自启，也不修改系统永久执行策略或防火墙。
+新任务记录进程归属，后续启动仅在确认原进程已结束、没有活跃 R 使用任务文件时回收旧目录。
+旧版未标记目录至少保留 24 小时，并需确认没有其他本项目实例；无法确认时保留文件。

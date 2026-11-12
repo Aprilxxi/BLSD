@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<!-- Install the corresponding font packages before enabling these aliases.
+     Example destination: /etc/fonts/conf.d/99-blsd-fonts.conf
+     Verify with fc-match 'Microsoft YaHei' and fc-match 'Arial'. -->
+<fontconfig>
+  <alias binding="strong">
+    <family>Microsoft YaHei</family>
+    <prefer>
+      <family>Noto Sans CJK SC</family>
+    </prefer>
+  </alias>
+  <alias binding="strong">
+    <family>Arial</family>
+    <prefer>
+      <family>Liberation Sans</family>
+    </prefer>
+  </alias>
+</fontconfig>

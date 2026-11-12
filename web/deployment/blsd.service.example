@@ -1,0 +1,26 @@
+# Replace paths, port, R executable, user and group for the target server.
+# Create the blsd user/group first. The application must be readable, and
+# /opt/blsd-studio/server/.jobs must be writable by blsd.
+[Unit]
+Description=BLSD Tool Node and R analysis service
+After=network.target
+
+[Service]
+Type=simple
+User=blsd
+Group=blsd
+WorkingDirectory=/opt/blsd-studio
+Environment=PORT=4174
+Environment=BLSD_RSCRIPT=/usr/bin/Rscript
+Environment=BLSD_TRUST_PROXY=loopback
+Environment=LANG=C.UTF-8
+Environment=LC_ALL=C.UTF-8
+ExecStart=/usr/bin/node /opt/blsd-studio/server/index.mjs
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=600
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

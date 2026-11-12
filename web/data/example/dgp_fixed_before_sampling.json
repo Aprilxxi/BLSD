@@ -1,0 +1,45 @@
+{
+  "version": "BLSD-INDEPENDENT-SYNTHETIC-20261022-v1",
+  "source": "INDEPENDENT_SYNTHETIC_COUNT_EXPOSURE",
+  "simulated": true,
+  "generationSeed": 20261022,
+  "coefficientSeed": 123,
+  "years": [1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023],
+  "ages": [32.5, 37.5, 42.5, 47.5, 52.5, 57.5, 62.5, 67.5, 72.5, 77.5, 82.5, 87.5, 92.5],
+  "referenceAge": 62.5,
+  "ageScale": 30,
+  "referenceYear": 2005,
+  "timeScale": 15,
+  "referenceRatePer100000": 250,
+  "ageLinear": 3.2,
+  "ageQuadratic": -0.9,
+  "timeLinear": -0.55,
+  "ageTimeInteraction": 0.12,
+  "timeCubic": 0.08,
+  "populationBase": 2000000,
+  "populationReferenceAge": 32.5,
+  "populationAgeSlope": -0.03,
+  "negativeBinomialSize": 300,
+  "etaFormula": "log(250/100000)+3.2*x-0.9*x^2-(0.55-0.12*x)*u+0.08*u^3",
+  "x": "(age-62.5)/30",
+  "u": "(year-2005)/15",
+  "exposureFormula": "round(2000000*exp(-0.03*(age-32.5)))",
+  "countModel": "NB(mu=Pop*exp(eta), size=300); variance=mu+mu^2/300",
+  "rowOrder": "Ascending year; ascending age within each year",
+  "realizations": 1,
+  "seedSearch": false,
+  "individualCountReplacement": false,
+  "illustrativeCoordinates": [
+    {
+      "year": 2005,
+      "age": 62.5
+    },
+    {
+      "year": 2005,
+      "age": 87.5
+    }
+  ],
+  "sectionYears": [1990, 2005, 2023],
+  "trendAges": [32.5, 42.5, 52.5, 62.5, 82.5, 92.5],
+  "purpose": "One illustrative dataset for interpreting rate levels and local derivatives; not a repeated-simulation validation study"
+}

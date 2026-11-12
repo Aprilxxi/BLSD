@@ -1,0 +1,202 @@
+BLSD Tool：Linux 自动部署说明
+适用系统：Ubuntu Server 24.04 LTS，x86_64 / amd64 或 aarch64 / arm64
+版本日期：2026-10-23
+部署包：BLSD_Tool_Linux_20261023.zip
+
+本包包含已编译网页、Node 服务、R 分析与导出程序和自动部署脚本。
+只保留运行必需的两份共享数据校验模块、Linux 维护文件、许可证与逐文件校验清单。
+不包含测试、截图、日志、任务缓存、用户数据、研究资料、开发工具、完整前端源码、
+Node/R 安装包、node_modules、Windows 启动工具或静态托管适配文件。
+内置示例和网页字体已保留在编译资源中，不重复附带历史示例目录。
+内置示例为442行独立模拟死亡率Count/Pop数据，不是实际人口观测；生成size=300与拟合时估计的theta不同。页面初始为空，加载示例后仍需运行分析。
+目标结构：浏览器 -> Nginx（80/443）-> 127.0.0.1:4174 -> 本机 R。
+部署现成包不需要 npm install、pnpm install 或重新构建。
+以下命令均在服务器 SSH 终端执行；实际部署需要 sudo 权限。
+
+一、服务器外需要先完成的设置
+
+1. 准备 Ubuntu 24.04 服务器，保留 SSH 登录权限。
+2. 在域名服务商设置 A 记录，指向服务器公网 IPv4。
+   示例域名 analysis.example.org 必须换成自己的真实域名。
+   本脚本使用 IPv4 Nginx 监听。不要保留指向其他地址或不可用 IPv6 的 AAAA 记录。
+3. 在云安全组中开放 TCP 80、443；保留当前 SSH 端口。
+   4174 仅绑定本机，不需要向公网开放。
+4. 将 ZIP 和同次交付的 .sha256 文件上传到服务器 /tmp。
+
+DNS 和云安全组依赖各自服务商账号，脚本无法代替这些控制台操作。
+服务器需要能访问 Ubuntu 软件仓库、nodejs.org；HTTPS 还需能访问证书服务。
+若服务器有自定义 Nginx、服务或端口策略，应先由管理员核对，脚本不会删除其他站点。
+
+二、校验并解压
+
+  cd /tmp
+  sha256sum --check BLSD_Tool_Linux_20261023.sha256
+
+必须看到 OK。选用一个新的解压目录：
+
+  sudo apt-get update
+  sudo apt-get install -y unzip
+  mkdir -p /tmp/blsd-release-20261023
+  unzip -q BLSD_Tool_Linux_20261023.zip -d /tmp/blsd-release-20261023
+  cd /tmp/blsd-release-20261023/blsd-tool
+
+ZIP 内已有 blsd-tool/ 顶层目录。不要直接解压覆盖正在运行的安装目录。
+包内目录采用当前产品名称；已有服务器的 /opt/blsd-studio 安装路径和服务配置标识保持兼容。
+
+三、先查看部署计划
+
+将下面的域名改为自己的域名：
+
+  bash deployment/deploy-linux.sh --domain analysis.example.org --dry-run
+
+--dry-run 只打印计划，不安装软件、不写服务配置、不申请证书；它不是实机部署验收。
+全部参数可用以下命令查看：
+
+  bash deployment/deploy-linux.sh --help
+
+四、一条命令部署
+
+HTTP 部署：
+
+  sudo bash deployment/deploy-linux.sh --domain analysis.example.org
+
+启用 HTTPS（域名必须已解析，公网 80 端口可访问）：
+
+  sudo bash deployment/deploy-linux.sh --domain analysis.example.org --https --email admin@example.org --agree-tos
+
+请替换真实域名和自己的联系邮箱。--agree-tos 表示部署者明确接受证书机构的服务条款；
+只有你确认接受后才使用该参数。脚本不会隐式代你同意条款。
+本脚本的证书申请采用 Certbot 非交互模式，HTTPS 参数缺失时会在修改系统前报错。
+
+尚无域名时，可先用服务器公网 IPv4 部署 HTTP：
+
+  sudo bash deployment/deploy-linux.sh --domain 203.0.113.10
+
+203.0.113.10 是文档示例地址，必须换成自己的服务器 IP；该方式不支持本脚本的 HTTPS。
+之后改用域名部署时，请按更新方式执行，并核对站点域名配置。
+
+五、脚本会完成什么
+
+  - 检查系统版本、架构、参数与发布文件。
+  - 安装 Nginx、R、mgcv/jsonlite/scales/ggplot2、字体与辅助工具。
+  - 优先使用满足要求且服务账号可执行的系统 Node；否则下载 Node 24.21.0 官方
+    Linux x64/arm64 二进制，核对官方 SHA-256 后安装。
+  - 创建 blsd 服务账号，安装到 /opt/blsd-studio；代码由 root 管理。
+  - 仅为 server/.jobs 设置 blsd 写权限，配置中文/英文字体别名。
+  - 以实际服务账号检查 R 包、Cairo 图形能力和必要文件。
+  - 创建 blsd.service，配置开机自启及故障重启。
+  - 创建 Nginx 站点，保留浏览器 Host，用实际连接地址覆盖 X-Real-IP，校验配置后重新加载。
+    服务仅在 BLSD_TRUST_PROXY=loopback 时信任本机代理提供的单个客户端地址。
+  - UFW 已启用时补充 80/443 规则，不自动启用 UFW，不更改 SSH 规则。
+  - 按参数配置 HTTPS、HTTP 跳转和证书自动续期。
+  - 检查本机应用及代理后的健康状态，输出访问地址与备份位置。
+
+脚本不会修改统计公式、拟合方法、配色或数据。软件仓库安装的 R 包版本可能与开发机
+不同，严格复现时应记录实际版本；不能保证跨平台结果逐位或图形逐像素一致。
+HTTPS 使用 Ubuntu 仓库的 certbot/python3-certbot-nginx 和 certbot.timer，不安装 Snap。
+
+固定运行配置：
+  安装目录：/opt/blsd-studio
+  systemd：blsd.service
+  运行账号/组：blsd
+  内部端口：127.0.0.1:4174
+  网站：根路径 /，不支持直接挂到 /blsd/ 子路径
+
+六、部署完成后验收
+
+脚本检查成功后，用另一台电脑的浏览器打开输出的网址，完成一次真实分析：
+
+1. 点击“加载示例”，点击“运行分析”，确认得到实际结果。
+2. 切换图表，检查读数、区间和等高线。
+3. 下载中文 PNG/PDF/TIFF，确认汉字、单位及色标正常；图表统一为 180 mm 双栏宽度。
+4. 分别下载“结果表格”和“完整分析归档”：确认 ZIP 内每个成功性别有独立的
+   九工作表 Excel，或可读 CSV、完整 JSON 及原始 RDS；单组图表 ZIP 应有八幅图。
+5. HTTPS 模式检查浏览器证书，关闭 SSH 后再次访问。
+
+如需再次检查完整环境，先查看服务实际使用的 Node 绝对路径：
+
+  sudo systemctl cat blsd
+
+从 ExecStart 读取 Node 路径，用它执行检查器。例如官方 x64 二进制安装时：
+
+  sudo -u blsd env BLSD_RSCRIPT=/usr/bin/Rscript LANG=C.UTF-8 LC_ALL=C.UTF-8 /opt/node-v24.21.0-linux-x64/bin/node /opt/blsd-studio/deployment/check-environment.mjs
+
+ARM 服务器将 linux-x64 换成 linux-arm64；复用系统 Node 时用它的实际路径。
+健康 JSON 中 available 必须为 true；HTTP 200 本身不代表 R 已可用。
+网页“使用说明”和“引用”仍为预留入口。
+
+七、更新与回退
+
+收到新包后，先让使用者下载结果，再校验并解压到新的临时目录，进入新包目录执行：
+
+  sudo bash deployment/deploy-linux.sh --domain analysis.example.org --update
+
+首次加入 HTTPS 时可在此命令后附 --https --email 联系邮箱 --agree-tos。
+已有 HTTPS 的同域名站点会保留证书配置；普通更新无需重新申请证书。
+脚本只接受它管理的安装目录；遇到已有未标记目录会停止，避免覆盖其他内容。
+更新前保存旧版本及相关配置，并在关键启动检查失败时尝试回退；备份位置以执行输出为准。
+备份不替代数据库/服务器备份。重启会使当前临时分析失效，更新应安排在合适时间。
+本包为预编译运行包，维护更新请使用开发项目生成的新发布包；不要在服务器执行前端
+依赖安装或重建。RELEASE_MANIFEST.json 记录每个发布文件的大小和 SHA-256。
+
+已有手工部署不会被自动删除或迁移。管理员应先保存结果及配置，停止旧服务释放 4174，
+再用新包首次部署；确认新版本正常后，自行归档旧安装。
+
+八、维护和排错
+
+  sudo systemctl status blsd --no-pager
+  sudo journalctl -u blsd -n 100 --no-pager
+  sudo journalctl -u blsd -f
+  sudo tail -n 100 /var/log/nginx/error.log
+  curl --fail http://127.0.0.1:4174/api/health
+  sudo nginx -t
+
+重启/停止：
+
+  sudo systemctl restart blsd
+  sudo systemctl stop blsd
+
+HTTPS 续期验证（已启用 HTTPS 时）：
+
+  sudo certbot renew --dry-run
+  systemctl list-timers --all | grep -i certbot
+
+常见问题：
+  域名打不开：核对 A/AAAA、云安全组、Nginx，以及域名生效时间。
+  Nginx 欢迎页：核对真实访问域名和站点 server_name，不要开放 4174 代替代理。
+  502：检查 blsd 日志、Node/R 路径、端口占用与本机健康检查。
+   ORIGIN_NOT_ALLOWED：代理必须保留 Host $http_host，网页与 /api 必须同源。
+   长任务：网页提交异步任务并轮询结果，不长时间占用同一个代理请求。
+   旧同步 API 仍受 Nginx 600 秒读超时限制；长任务客户端应使用 Prefer: respond-async。
+   代理限流：保留 BLSD_TRUST_PROXY=loopback 和 X-Real-IP $remote_addr，不能直接信任公网传来的地址头。
+  R 包/Cairo/中文异常：用 blsd 账号运行完整环境检查，检查字体及安装日志。
+  证书申请失败：先保证公网 HTTP 80 可访问，并排除错误 AAAA、DNS及防火墙问题。
+  429/队列满：稍后重试，当前拟合和导出共用一个队列。
+  FIT_EXPIRED：结果已过期或服务重启，需重新运行分析。
+  写入失败/磁盘不足：检查 /opt/blsd-studio/server/.jobs 的空间、inode 和 blsd 权限。
+
+九、共享使用与验证范围
+
+当前无登录及独立结果权限隔离，适合小范围研究团队。单个 Node 进程共用拟合/导出队列，
+保留最近 5 次分析约 1 小时；服务重启后失效。Nginx 覆盖客户端地址头且服务仅信任本机代理时，
+每个客户端地址每分钟最多 12 次拟合/图表导出请求；队列容量仍由所有使用者共享。
+不要直接启动多个副本随机分流，否则 fitId 缓存不共享。
+
+异步任务最多同时保留 16 项，每项响应上限 256 MiB，总逻辑预留上限 4 GiB；
+这些限额不预分配磁盘，仍需为保留模型、导出图和临时响应留足空间。运行任务失去
+查询 120 秒后取消；完成响应在最后查询/读取结束约 5 分钟后过期。文件删除失败会
+保留容量并重试，429 时应先检查磁盘和日志，不要直接删除仍在使用的任务目录。
+正常停止使用 systemctl stop/restart，避免手工杀进程后清空 .jobs。启动后的首次任务
+只回收已确认原进程死亡的遗留目录；未知归属或链接会保留供管理员核查。
+更新备份可能含此前的临时模型/数据，应限制访问；确认新版本和回退需求后再由管理员
+按实际备份路径归档或清理。日志与备份应纳入服务器现有的轮换和空间监控。
+
+交付前在 Windows 开发机验证网页构建、真实 R 拟合、导出与部署包完整性；部署脚本另做
+Bash 语法、部署计划和参数校验测试。本次没有连接你的 Linux 服务器，仍须按第六节实机验收。
+
+官方参考：
+  https://nodejs.org/en/blog/release/v24.21.0
+  https://ubuntu.com/server/docs/how-to-install-nginx/
+  https://packages.ubuntu.com/noble/all/r-cran-ggplot2
+  https://ubuntu.com/server/docs/how-to/security/obtain-tls-certificates/
+  https://manpages.ubuntu.com/manpages/noble/man1/certbot.1.html

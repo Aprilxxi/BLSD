@@ -1,4 +1,25 @@
-# BLSD Tool：分析与结果绘图
+# BLSD: Bayesian Lexis Surface Dynamics
+
+BLSD is the statistical model; **BLSD Tool** is its browser-based analysis application.
+
+## Web application source
+
+The complete current web application source is in [web/](web/README.md), including the React interface, Node.js/R backend, model and export code, tests, and deployment scripts.
+
+- [Installation and usage](web/README.md)
+- [Example CSV](web/data/example/example_data.csv) and [fixed simulation specification](web/data/example/dgp_fixed_before_sampling.json)
+- [Linux deployment instructions](web/deployment/DEPLOYMENT_LINUX_zh.txt)
+- Hosted application URL: to be added.
+
+The fixed example contains 442 independently simulated observations: 1990-2023 and 13 closed five-year age groups from 30-34 to 90-94. Its data-generation seed is **20261022**. The web interface's coefficient-sampling seed is user-configurable (default **123**); changing it does not regenerate the example counts.
+
+Web outputs include eight interactive figures, approximate 95% pointwise model uncertainty intervals, diagnostics, downloadable figures, result tables, and complete analysis archives. See the web README for input requirements, server-side processing and temporary retention.
+
+## License
+
+The BLSD Tool web application and its accompanying software documentation are licensed under the [MIT License](LICENSE), Copyright (c) 2026 Ruhai Bai and Jinchao Hua. Third-party components, fonts and external data retain their respective licenses and terms. The original standalone R analysis and plotting files and their documentation are preserved below.
+
+## Standalone R analysis and plotting
 
 仓库提供两个独立 R 脚本：
 

@@ -1,0 +1,223 @@
+{
+  "source": "INDEPENDENT_SYNTHETIC_COUNT_EXPOSURE",
+  "filename": "example_data.csv",
+  "simulated": true,
+  "derived": false,
+  "originalEstimates": false,
+  "version": "BLSD-INDEPENDENT-SYNTHETIC-20261022-v1",
+  "dataset": "Independent simulated mortality example",
+  "measure": "Count",
+  "sex": null,
+  "generationSeed": 20261022,
+  "coefficientSeed": 123,
+  "years": [
+    1990,
+    2023
+  ],
+  "ageMidpoints": [
+    32.5,
+    37.5,
+    42.5,
+    47.5,
+    52.5,
+    57.5,
+    62.5,
+    67.5,
+    72.5,
+    77.5,
+    82.5,
+    87.5,
+    92.5
+  ],
+  "ageGroups": [
+    {
+      "midpoint": 32.5,
+      "lower": 30,
+      "upper": 34
+    },
+    {
+      "midpoint": 37.5,
+      "lower": 35,
+      "upper": 39
+    },
+    {
+      "midpoint": 42.5,
+      "lower": 40,
+      "upper": 44
+    },
+    {
+      "midpoint": 47.5,
+      "lower": 45,
+      "upper": 49
+    },
+    {
+      "midpoint": 52.5,
+      "lower": 50,
+      "upper": 54
+    },
+    {
+      "midpoint": 57.5,
+      "lower": 55,
+      "upper": 59
+    },
+    {
+      "midpoint": 62.5,
+      "lower": 60,
+      "upper": 64
+    },
+    {
+      "midpoint": 67.5,
+      "lower": 65,
+      "upper": 69
+    },
+    {
+      "midpoint": 72.5,
+      "lower": 70,
+      "upper": 74
+    },
+    {
+      "midpoint": 77.5,
+      "lower": 75,
+      "upper": 79
+    },
+    {
+      "midpoint": 82.5,
+      "lower": 80,
+      "upper": 84
+    },
+    {
+      "midpoint": 87.5,
+      "lower": 85,
+      "upper": 89
+    },
+    {
+      "midpoint": 92.5,
+      "lower": 90,
+      "upper": 94
+    }
+  ],
+  "boundedAgeGroups": [
+    "30-34",
+    "90-94"
+  ],
+  "rows": 442,
+  "sourceSha256": "5d2b2edac8329cedf6b2fecb29fbb046b62b892dfba27255c9d4541575a0f46c",
+  "sourceFile": "data/example/example_data.csv",
+  "generationRulesSha256": "1cfb3c5d9882481393bc420d234656f7839fcca22c22bd71632a991c25ddf735",
+  "generationRules": {
+    "version": "BLSD-INDEPENDENT-SYNTHETIC-20261022-v1",
+    "source": "INDEPENDENT_SYNTHETIC_COUNT_EXPOSURE",
+    "simulated": true,
+    "generationSeed": 20261022,
+    "coefficientSeed": 123,
+    "years": [
+      1990,
+      1991,
+      1992,
+      1993,
+      1994,
+      1995,
+      1996,
+      1997,
+      1998,
+      1999,
+      2000,
+      2001,
+      2002,
+      2003,
+      2004,
+      2005,
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023
+    ],
+    "ages": [
+      32.5,
+      37.5,
+      42.5,
+      47.5,
+      52.5,
+      57.5,
+      62.5,
+      67.5,
+      72.5,
+      77.5,
+      82.5,
+      87.5,
+      92.5
+    ],
+    "referenceAge": 62.5,
+    "ageScale": 30,
+    "referenceYear": 2005,
+    "timeScale": 15,
+    "referenceRatePer100000": 250,
+    "ageLinear": 3.2,
+    "ageQuadratic": -0.9,
+    "timeLinear": -0.55,
+    "ageTimeInteraction": 0.12,
+    "timeCubic": 0.08,
+    "populationBase": 2000000,
+    "populationReferenceAge": 32.5,
+    "populationAgeSlope": -0.03,
+    "negativeBinomialSize": 300,
+    "etaFormula": "log(250/100000)+3.2*x-0.9*x^2-(0.55-0.12*x)*u+0.08*u^3",
+    "x": "(age-62.5)/30",
+    "u": "(year-2005)/15",
+    "exposureFormula": "round(2000000*exp(-0.03*(age-32.5)))",
+    "countModel": "NB(mu=Pop*exp(eta), size=300); variance=mu+mu^2/300",
+    "rowOrder": "Ascending year; ascending age within each year",
+    "realizations": 1,
+    "seedSearch": false,
+    "individualCountReplacement": false,
+    "illustrativeCoordinates": [
+      {
+        "year": 2005,
+        "age": 62.5
+      },
+      {
+        "year": 2005,
+        "age": 87.5
+      }
+    ],
+    "sectionYears": [
+      1990,
+      2005,
+      2023
+    ],
+    "trendAges": [
+      32.5,
+      42.5,
+      52.5,
+      62.5,
+      82.5,
+      92.5
+    ],
+    "purpose": "One illustrative dataset for interpreting rate levels and local derivatives; not a repeated-simulation validation study"
+  },
+  "sourceGenerationScript": "../output/BLSD-S_web_manuscript/simulated_results_revision_20261022/generate_and_fit_simulated_example.R",
+  "sourceGenerationScriptSha256": "83a80b82f2dd9a5f2458617def51460949967fd5ef356bb1584a1f53348ee9bd",
+  "defaultSettings": {
+    "method": "nb-reml",
+    "draws": 1000,
+    "seed": 123,
+    "kAge": 10,
+    "kYear": 10,
+    "threshold": 0.005
+  },
+  "interpretation": "Independently simulated mortality counts and exposure, not observations from a real population. The one approved realization is retained unchanged. Fitted results and pointwise uncertainty intervals are produced only by the actual R model after analysis."
+}

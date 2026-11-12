@@ -1,0 +1,184 @@
+BLSD Tool 部署说明
+版本：2026-10-15
+
+一、交付内容与运行方式
+
+本包包含已编译网页 dist/client、网页源码、Node 服务、R 拟合与图表导出脚本、示例数据及测试。预编译网页可以直接运行，不必安装前端依赖，也不必重新构建。
+
+本包不包含 node_modules、Node/R 运行时、原研究目录、临时缓存、用户上传数据、已生成的分析结果或 PDF 使用手册。网页的“使用说明”和“引用”入口暂未接通。
+
+真实分析必须由 Node 调用本机 R。不能仅将 dist/client 上传到静态空间，也不能用 pnpm preview 代替分析服务。dist/server/index.js 是保留的静态托管适配文件；完整分析服务的入口是 server/index.mjs。
+
+部署到网站根路径，例如 https://analysis.example.org/。当前前端使用 /api 和 /assets 等绝对路径，不支持直接挂在 /blsd/ 这类子路径下。
+
+二、运行环境
+
+推荐 Node.js 22.12 或更高版本。当前实测环境为：
+  Node.js 24.19.0
+  pnpm 11.25.0（仅源码安装、重建与测试需要）
+  R 4.4.3
+  mgcv 1.9.1
+  jsonlite 2.0.0
+  ggplot2 4.0.0
+  scales 1.4.0
+
+R 的 Cairo 和 TIFF 图形能力必须可用，中文导出还需要可用的中文字体。版本变化可能导致小幅数值差异或图形差异；研究中需要严格复现时，请保留上述版本，并记录实际运行版本。安装脚本安装的是目标环境可取得的缺失包，不会自动锁定上述版本。
+
+Windows 可使用常规安装的 Node.js 与 R。Linux 需安装 Node.js、R、所需 R 包，以及 Cairo/fontconfig、libtiff 和字体；发行版的 R 版本可能不同于上述实测版本，安装后先检查。R 编译安装或缺少图形组件时，应确认 capabilities("cairo") 和 capabilities("tiff") 均为 TRUE。
+
+三、快速运行：使用包内预编译网页
+
+先将压缩包完整解压到一个固定目录，并进入项目根目录；以下命令都从该目录执行。
+
+1. 确认 Node.js 和 Rscript 可以运行：
+
+   node --version
+   Rscript --version
+
+   如果 Rscript 未加入 PATH，设置 BLSD_RSCRIPT 为它的完整可执行文件路径。Windows 示例（请替换为真实安装位置）：
+
+   $env:BLSD_RSCRIPT = 'C:\Program Files\R\R-4.4.3\bin\Rscript.exe'
+
+   Linux 示例：
+
+   export BLSD_RSCRIPT=/usr/bin/Rscript
+
+2. 检查环境：
+
+   node deployment/check-environment.mjs
+
+   该检查应确认 mgcv、jsonlite、scales、ggplot2 均可加载，且 Cairo 可用。缺包时执行下面的安装脚本，再重新检查：
+
+   Rscript --vanilla deployment/install-r-packages.R
+
+   Windows 未配置 PATH 时可用：
+
+   & $env:BLSD_RSCRIPT --vanilla deployment/install-r-packages.R
+
+   Linux 未配置 PATH 时可用：
+
+   "$BLSD_RSCRIPT" --vanilla deployment/install-r-packages.R
+
+   安装包需要网络和可写的 R 包库。服务用户必须能加载这些包；管理员账户安装到其私人包库，不代表服务用户也能使用。
+
+3. 启动服务，二选一：
+
+   Windows：双击项目根目录 start-windows.cmd，自动检查环境、后台启动并打开浏览器。
+   停止本启动器管理的服务使用 stop-windows.cmd。更多选项见 deployment/WINDOWS_LOCAL_zh.txt。
+   也可通过 Windows PowerShell 调用：
+
+   .\deployment\start-windows.ps1
+
+   指定端口与 R 路径：
+
+   .\deployment\start-windows.ps1 -Port 4174 -Rscript 'C:\Program Files\R\R-4.4.3\bin\Rscript.exe'
+
+   Linux：
+
+   bash deployment/start-linux.sh
+
+   指定配置：
+
+   PORT=4174 BLSD_RSCRIPT=/usr/bin/Rscript bash deployment/start-linux.sh
+
+   也可直接启动跨平台 Node 入口：
+
+   node server/index.mjs
+
+4. Windows 启动器默认打开 http://127.0.0.1:4175/；Linux 启动或直接 Node 启动默认为 http://127.0.0.1:4174/。
+
+   Windows 启动器用 -Port 修改端口；直接 Node 启动用 PORT 环境变量。服务固定监听 127.0.0.1；其他计算机应通过下文的同机反向代理访问。网页和 API 必须保持同源。
+
+   在 Windows 中，API 会为 R 子进程处理 UTF-8 区域设置，不需要另行设置 LC_ALL。
+
+四、Linux 字体与中文图表导出
+
+当前 R 图表使用中文字体名 Microsoft YaHei、英文字体名 Arial。Linux 可通过 fontconfig 别名映射到 Noto Sans CJK SC 与 Liberation Sans，不需要改 R 脚本或统计计算。
+
+Debian/Ubuntu 的字体安装示例：
+
+   sudo apt-get update
+   sudo apt-get install fontconfig fonts-noto-cjk fonts-liberation
+   sudo cp deployment/fonts.conf.example /etc/fonts/conf.d/99-blsd-fonts.conf
+   sudo fc-cache -f
+   fc-match 'Microsoft YaHei'
+   fc-match 'Arial'
+
+其他发行版请使用对应包名。确认匹配到的字体文件真实存在；若采用 systemd，请在服务用户环境中也验证字体与 R 包。启动后实际导出中文 PDF、600 dpi PNG 和 TIFF，检查汉字、符号、图例与单位。图表统一为 180 mm 双栏宽度。仅健康检查通过不能替代导出验证。
+
+五、同机 Nginx 反向代理
+
+推荐一台服务器上运行一个 Node 进程和它调用的 R，再由同机 Nginx 提供域名入口。deployment/nginx.conf.example 是模板，不会自动部署。
+
+1. 将服务放在固定目录，例如 /opt/blsdtudio。
+2. 修改模板中的域名和上游端口，使其与实际配置一致。
+3. 按发行版约定将配置放入 Nginx 配置目录，执行 nginx -t 后再 reload。
+4. 如需 HTTPS，使用目标服务器正常的证书配置；保留模板的 Host 转发行为。
+
+代理保留原始 Host（含端口），因为 API 会检查浏览器请求的 Origin 与 Host。不要改成仅域名而丢弃访问端口，也不要把 /api 转到另一个域名。模板请求体上限为 10m，读写超时为 600 秒；应用自身仍保留 JSON 8 MiB 与网页 CSV 5 MB 限制。复杂的多分组运行可能需要更长代理超时，但单次 R 调用仍受应用原有 180 秒限制。
+
+六、使用 systemd 常驻运行（Linux）
+
+deployment/blsd.service.example 是单进程服务模板。请先创建专用 blsd 用户/组、准备目录和权限；模板不会自动创建用户。以下以 /opt/blsdtudio 为例，实际路径请统一替换：
+
+   sudo useradd --system --user-group --home-dir /opt/blsdtudio --shell /usr/sbin/nologin blsd
+   sudo mkdir -p /opt/blsdtudio/server/.jobs
+   sudo chown blsd:blsd /opt/blsdtudio/server/.jobs
+   sudo -u blsd env BLSD_RSCRIPT=/usr/bin/Rscript /usr/bin/node /opt/blsdtudio/deployment/check-environment.mjs
+
+已存在 blsd 用户时不必重复创建。项目文件及其父目录需要允许 blsd 读取、进入；server/.jobs 必须可写。Node 与 R 安装位置也应允许该用户执行。
+
+修改服务模板中的路径、端口、R 路径及用户后安装：
+
+   sudo cp deployment/blsd.service.example /etc/systemd/system/blsd.service
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now blsd.service
+   sudo systemctl status blsd.service
+   sudo journalctl -u blsd.service -n 100 --no-pager
+
+模板直接执行 /usr/bin/node，不依赖登录 shell。通过 nvm 等安装的 Node 可能不在这个位置，请以真实绝对路径替换。更新程序或环境后，需要重启服务；重启会使当前分析缓存失效。
+
+七、缓存、并发与使用范围
+
+分析结果默认保留最近 5 次分析，每次 1 小时。同次多分组分析共用一次分析额度；各组仍独立拟合。模型与结果临时文件位于 server/.jobs，正常关闭时清理，异常中断产生的残留不会自动恢复为可用结果。导出需要当前进程保留的 fitId，因此用户应及时下载结果。
+
+拟合与导出串行执行，默认 1 个活动任务、最多 3 个排队任务。不要通过启动多个服务进程来直接共享结果：当前缓存索引只在进程内，多实例部署需要会话绑定与独立缓存设计。使用反向代理时，应用现有按连接地址的限流会由代理后的访问者共享。
+
+本版本适合内网或受控访问，没有用户账号和用户之间的结果隔离机制，并非现成的公网多租户系统。临时任务目录不能作为网站静态目录暴露。
+
+八、源码重建与测试（修改网页时才需要）
+
+预编译网页可直接运行。需要修改或重建时，固定使用 pnpm 11.25.0 与包内 pnpm-lock.yaml：
+
+   pnpm --version
+   pnpm install --frozen-lockfile
+   pnpm run build
+
+包内 pnpm workspace 配置已允许 esbuild 的必要安装构建。首次安装需要访问依赖仓库；不要改用旧 package-lock.json 或 npm ci。本包不包含旧的 package-lock.json。
+
+构建完成后，应有 dist/client/index.html。构建另保留 dist/server/index.js 和 dist/.openai/hosting.json 作为静态托管兼容产物；完整分析仍使用 node server/index.mjs。
+
+验证命令：
+
+   pnpm test
+   pnpm run test:sites
+
+测试会使用 tests/*.test.mjs 与 server/api.test.mjs；真实 R 集成测试需要正确的 R 环境。检查输出中的跳过项，不能把缺少 R 导致的跳过视为分析功能通过。实际验收还应在网页加载示例、运行分析、切换图表，并下载 PNG/PDF/TIFF 与全部结果 CSV/JSON/ZIP。
+
+九、常见问题
+
+网页能打开，但运行失败：先运行环境检查。只有静态文件或使用 pnpm preview 时，R API 不可用；请使用本包启动脚本或 Node 服务入口。
+
+提示 R_UNAVAILABLE：设置 BLSD_RSCRIPT 为正确的 Rscript 路径，并确认服务用户有执行权限。
+
+提示 R_PACKAGES_MISSING：在服务用户可访问的 R 包库安装依赖，重新检查。拟合也使用 scales，导出还需要 ggplot2。
+
+提示 CAIRO_UNAVAILABLE：当前 R 构建没有可用的 Cairo 设备。补全目标系统图形依赖或使用带 Cairo 的 R，再运行检查。
+
+中文导出为方框或缺字：检查 fontconfig 映射和实际匹配字体；确认服务用户能够读取字体，重启服务后重新导出。
+
+提示 ORIGIN_NOT_ALLOWED：检查代理是否保留浏览器访问的原始 Host（包括端口），以及网页和 /api 是否同源。
+
+提示 FIT_EXPIRED：结果已到期、被最近分析淘汰或服务重启，需重新运行。
+
+写入临时文件失败：检查 server/.jobs 对服务用户的写权限和剩余磁盘空间。
